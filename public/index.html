@@ -246,7 +246,7 @@ async function createSpotifyPlaylist() {
   const title = document.getElementById('playlist-title').value;
   setLoading(true, 'Création de la playlist…');
   try {
-    const plRes = await fetch(`https://api.spotify.com/v1/users/${spotifyUserId}/playlists`, {
+    const plRes = await fetch(`https://api.spotify.com/v1/me/playlists`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${spotifyToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: title, description: 'Généré par Snefrou', public: false })
