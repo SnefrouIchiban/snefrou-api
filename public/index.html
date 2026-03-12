@@ -236,7 +236,7 @@ function removeTrack(i) { tracks.splice(i, 1); renderPlaylist(); }
 
 function copyList() {
   const lines = [document.getElementById('playlist-title').value, ''];
-  tracks.forEach((t, i) => lines.push(`${i+1}. ${t.title} — ${t.artist}`));
+  tracks.forEach((t, i) => lines.push(`${t.title} - ${t.artist}`));
   navigator.clipboard.writeText(lines.join('\n')).then(() => toast('Copié !', 'success'));
 }
 
