@@ -1,0 +1,39 @@
+name: SIGNAL Newsletter Quotidienne
+
+on:
+  schedule:
+    # Tous les jours à 7h00 UTC = 9h00 Paris (heure d'été) / 8h00 (heure d'hiver)
+    - cron: "0 7 * * *"
+
+  # Permet de déclencher manuellement depuis l'interface GitHub
+  workflow_dispatch:
+
+jobs:
+  send-newsletter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Générer et envoyer SIGNAL
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+        run: node src/generate-and-send.js
+
+      - name: Log succès
+        if: success()
+        run: echo "✓ Newsletter SIGNAL envoyée avec succès"
+
+      - name: Log échec
+        if: failure()
+        run: echo "✗ Échec de l'envoi — vérifier les logs ci-dessus"
