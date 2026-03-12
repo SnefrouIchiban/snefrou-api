@@ -146,7 +146,7 @@ function setConnected(yes) {
 
 async function connectSpotify() {
   const { verifier, challenge } = await generatePKCE();
-  localStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('pkce_verifier', verifier);
   const state = Math.random().toString(36).substring(2, 10);
   const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${CLIENT_ID}&scope=${encodeURIComponent(SCOPES)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${state}&code_challenge=${challenge}&code_challenge_method=S256`;
   window.location.href = url;
@@ -158,7 +158,7 @@ async function handleCallback() {
   const error = params.get('error');
   if (error) { showBanner('Erreur Spotify : ' + error, 'error'); window.history.replaceState({}, document.title, window.location.pathname); return; }
   if (!code) return;
-  const verifier = localStorage.getItem('pkce_verifier');
+  const verifier = sessionStorage.getItem('pkce_verifier') || localStorage.getItem('pkce_verifier');
   if (!verifier) { showBanner('Session expirée, reconnecte-toi.', 'error'); return; }
   showBanner('Connexion en cours…', 'success');
   try {
@@ -172,7 +172,7 @@ async function handleCallback() {
       spotifyToken = data.access_token;
       localStorage.setItem('spotify_token', spotifyToken);
       localStorage.setItem('spotify_token_exp', Date.now() + data.expires_in * 1000);
-      localStorage.removeItem('pkce_verifier');
+      sessionStorage.removeItem('pkce_verifier');
       setConnected(true);
       showBanner('Connecté à Spotify !', 'success');
       window.history.replaceState({}, document.title, window.location.pathname);
