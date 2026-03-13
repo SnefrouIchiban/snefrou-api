@@ -803,25 +803,35 @@ async function resolveUrisBeforeCreate() {
   const uris = [];
   let stoppedByRateLimit = false;
 
+  await new Promise(r => setTimeout(r, 3000));
+
   for (const track of tracks) {
     try {
       const uri = await findTrackUri(track);
-      if (uri) {
-        uris.push(uri);
-      }
+      if (uri) uris.push(uri);
     } catch (e) {
       if (typeof e.message === 'string' && e.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
-        stoppedByRateLimit = true;
-        break;
+        const retryAfter = parseInt(e.message.split(':')[1] || '2', 10);
+        await new Promise(r => setTimeout(r, (retryAfter + 2) * 1000));
+        try {
+          const retryUri = await findTrackUri(track);
+          if (retryUri) uris.push(retryUri);
+        } catch (retryError) {
+          if (typeof retryError.message === 'string' && retryError.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
+            stoppedByRateLimit = true;
+            break;
+          }
+          console.error('TRACK SEARCH RETRY ERROR', track, retryError);
+        }
+      } else {
+        console.error('TRACK SEARCH ERROR', track, e);
       }
-      console.error('TRACK SEARCH ERROR', track, e);
     }
+
+    await new Promise(r => setTimeout(r, 150));
   }
 
-  return {
-    uris: [...new Set(uris)],
-    stoppedByRateLimit
-  };
+  return { uris: [...new Set(uris)], stoppedByRateLimit };
 }
 
 async function createSpotifyPlaylist() {
