@@ -11,7 +11,6 @@
     --border: rgba(255,255,255,0.08); --border-hover: rgba(255,255,255,0.18);
     --text: #f0ede8; --text-muted: #6b6560; --text-secondary: #9d9890;
     --accent: #c8b89a; --green: #1DB954; --green-dim: rgba(29,185,84,0.12); --red: #e05a5a;
-    --yellow: #e6c15a;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; min-height: 100vh; line-height: 1.6; }
@@ -30,20 +29,18 @@
   .btn.primary:hover { background: #ddd0b8; }
   .btn.spotify { background: var(--green-dim); border-color: rgba(29,185,84,0.3); color: var(--green); text-align: center; }
   .btn.spotify:hover { background: rgba(29,185,84,0.2); }
-  .btn.warning { background: rgba(230,193,90,0.12); border-color: rgba(230,193,90,0.35); color: var(--yellow); text-align: center; }
-  .btn.warning:hover { background: rgba(230,193,90,0.18); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .main { padding: 2rem 2.5rem; display: flex; flex-direction: column; gap: 2rem; }
   .prompt-zone textarea { width: 100%; min-height: 100px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Serif Display', serif; font-size: 20px; line-height: 1.5; resize: none; outline: none; }
   .prompt-zone textarea::placeholder { color: var(--text-muted); font-style: italic; }
-  .generate-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .generate-row { display: flex; gap: 12px; align-items: center; }
   .generate-row .btn { width: auto; padding: 10px 24px; }
   .count-select { padding: 9px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px; outline: none; }
   .playlist-zone { display: none; }
   .playlist-zone.visible { display: block; }
   .playlist-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap; }
   .playlist-title-input { font-family: 'DM Serif Display', serif; font-size: 26px; color: var(--text); background: transparent; border: none; outline: none; border-bottom: 1px solid transparent; padding-bottom: 2px; flex: 1; min-width: 200px; }
-  .pl-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+  .pl-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .pl-actions .btn { width: auto; padding: 8px 16px; font-size: 11px; }
   .track-list { display: flex; flex-direction: column; gap: 2px; }
   .track { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 16px; padding: 10px 14px; border-radius: 6px; border: 1px solid transparent; transition: all 0.15s; }
@@ -55,10 +52,8 @@
   .track .remove-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; padding: 0 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
   .track:hover .remove-btn { opacity: 1; }
   .track .remove-btn:hover { color: var(--red); }
-  .playlist-footer { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+  .playlist-footer { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
   .pl-stats { font-size: 11px; color: var(--text-muted); }
-  .resume-note { display: none; font-size: 11px; color: var(--yellow); }
-  .resume-note.visible { display: block; }
   .loading { display: none; align-items: center; gap: 12px; padding: 1rem 0; }
   .loading.visible { display: flex; }
   .spinner { width: 16px; height: 16px; border: 1.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
@@ -68,12 +63,10 @@
   .banner.visible { display: block; }
   .banner.success { border-color: rgba(29,185,84,0.3); color: var(--green); }
   .banner.error { border-color: rgba(224,90,90,0.3); color: var(--red); }
-  .banner.warning { border-color: rgba(230,193,90,0.35); color: var(--yellow); }
   .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; font-size: 12px; color: var(--text); opacity: 0; transform: translateY(8px); transition: all 0.25s; z-index: 200; pointer-events: none; max-width: 420px; }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.success { border-color: rgba(29,185,84,0.4); color: var(--green); }
   .toast.error { border-color: rgba(224,90,90,0.4); color: var(--red); }
-  .toast.warning { border-color: rgba(230,193,90,0.4); color: var(--yellow); }
   @media (max-width: 980px) {
     .app { grid-template-columns: 1fr; }
     .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
@@ -105,7 +98,7 @@
     <div class="banner" id="banner"></div>
 
     <div class="prompt-zone">
-      <textarea id="prompt" placeholder="Décris ta playlist… jazz maghrébin sophistiqué, post-bop mélancolique années 60, électro minimaliste berlinoise…" rows="4"></textarea>
+      <textarea id="prompt" placeholder="Décris ta playlist…" rows="4"></textarea>
     </div>
 
     <div class="generate-row">
@@ -129,14 +122,12 @@
         <div class="pl-actions">
           <button class="btn" onclick="copyList()">Copier</button>
           <button class="btn spotify" id="spotify-create-btn" onclick="createSpotifyPlaylist()">Créer sur Spotify</button>
-          <button class="btn warning" id="spotify-resume-btn" onclick="resumeSpotifyPlaylist()" style="display:none">Reprendre l’envoi Spotify</button>
         </div>
       </div>
 
       <div class="track-list" id="track-list"></div>
       <div class="playlist-footer">
         <span class="pl-stats" id="pl-stats"></span>
-        <span class="resume-note" id="resume-note"></span>
       </div>
     </div>
   </div>
@@ -150,15 +141,10 @@ const API_BASE = 'https://snefrou-api.vercel.app';
 const REDIRECT_URI = 'https://snefrou-api.vercel.app';
 const SCOPES = 'playlist-modify-public playlist-modify-private';
 
-const TRACK_CACHE_KEY = 'snefrou_track_uri_cache_v2';
-const PENDING_BUILD_KEY = 'snefrou_pending_playlist_build_v2';
-
 let tracks = [];
 let spotifyToken = null;
 let spotifyUserId = null;
-let spotifyCooldownUntil = 0;
 let isCreatingSpotifyPlaylist = false;
-let trackUriCache = loadTrackUriCache();
 
 async function sha256(plain) {
   const enc = new TextEncoder().encode(plain);
@@ -180,10 +166,6 @@ async function generatePKCE() {
   return { verifier, challenge };
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function setConnected(yes) {
   document.getElementById('auth-status').classList.toggle('connected', yes);
   document.getElementById('auth-text').textContent = yes ? 'Connecté à Spotify' : 'Non connecté';
@@ -202,7 +184,6 @@ function disconnectSpotify(silent = false) {
   clearOAuthTemp();
   spotifyToken = null;
   spotifyUserId = null;
-  spotifyCooldownUntil = 0;
   setConnected(false);
   if (!silent) toast('Déconnecté de Spotify', 'success');
 }
@@ -220,66 +201,6 @@ function loadConfig() {
     spotifyToken = null;
     spotifyUserId = null;
     setConnected(false);
-  }
-}
-
-function loadTrackUriCache() {
-  try {
-    const raw = localStorage.getItem(TRACK_CACHE_KEY);
-    if (!raw) return new Map();
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return new Map();
-    return new Map(arr);
-  } catch {
-    return new Map();
-  }
-}
-
-function saveTrackUriCache() {
-  try {
-    localStorage.setItem(TRACK_CACHE_KEY, JSON.stringify(Array.from(trackUriCache.entries())));
-  } catch (e) {
-    console.warn('Impossible de sauvegarder le cache Spotify', e);
-  }
-}
-
-function getPendingBuild() {
-  try {
-    const raw = localStorage.getItem(PENDING_BUILD_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePendingBuild(data) {
-  localStorage.setItem(PENDING_BUILD_KEY, JSON.stringify(data));
-  updateResumeUI();
-}
-
-function clearPendingBuild() {
-  localStorage.removeItem(PENDING_BUILD_KEY);
-  updateResumeUI();
-}
-
-function updateResumeUI() {
-  const pending = getPendingBuild();
-  const resumeBtn = document.getElementById('spotify-resume-btn');
-  const note = document.getElementById('resume-note');
-
-  if (!resumeBtn || !note) return;
-
-  if (pending && pending.playlistId) {
-    resumeBtn.style.display = 'inline-block';
-    const remaining = Math.max(0, (pending.uniqueTracks?.length || 0) - (pending.currentIndex || 0));
-    note.textContent = `Reprise possible : ${pending.currentIndex || 0}/${pending.uniqueTracks?.length || 0} titres traités, ${remaining} restant(s).`;
-    note.classList.add('visible');
-  } else {
-    resumeBtn.style.display = 'none';
-    note.textContent = '';
-    note.classList.remove('visible');
   }
 }
 
@@ -334,28 +255,7 @@ async function ensureSpotifyToken() {
   return await refreshSpotifyToken();
 }
 
-function getSpotifyCreateBtn() {
-  return document.getElementById('spotify-create-btn');
-}
-
-function getSpotifyResumeBtn() {
-  return document.getElementById('spotify-resume-btn');
-}
-
-function formatCooldownSeconds() {
-  return Math.max(1, Math.ceil((spotifyCooldownUntil - Date.now()) / 1000));
-}
-
 async function spotifyFetch(url, options = {}, retry401 = true) {
-  const now = Date.now();
-
-  if (now < spotifyCooldownUntil) {
-    const seconds = formatCooldownSeconds();
-    const err = new Error(`Spotify te bloque encore. Attends ${seconds} seconde(s).`);
-    err.isCooldown = true;
-    throw err;
-  }
-
   const ok = await ensureSpotifyToken();
   if (!ok) {
     throw new Error('Session Spotify expirée. Reconnecte-toi.');
@@ -384,11 +284,7 @@ async function spotifyFetch(url, options = {}, retry401 = true) {
 
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get('Retry-After') || '5', 10);
-    spotifyCooldownUntil = Date.now() + (retryAfter + 5) * 1000;
-    const err = new Error(`Spotify rate-limit l’app. Attends ${retryAfter} seconde(s) minimum avant de recommencer.`);
-    err.isRateLimit = true;
-    err.retryAfter = retryAfter;
-    throw err;
+    throw new Error(`Spotify rate-limit l’app. Attends ${retryAfter} seconde(s) avant de recommencer.`);
   }
 
   return res;
@@ -534,11 +430,11 @@ async function generate() {
     console.log('GENERATE STATUS', res.status, parsed);
 
     if (!res.ok) {
-      const msg = parsed?.details?.error?.message || parsed?.error || 'Erreur serveur';
+      const msg = parsed?.error || 'Erreur serveur';
       throw new Error(msg);
     }
 
-    tracks = parsed.tracks || [];
+    tracks = Array.isArray(parsed.tracks) ? parsed.tracks : [];
     document.getElementById('playlist-title').value = parsed.playlist_title || 'Ma playlist';
 
     renderPlaylist();
@@ -559,14 +455,14 @@ function renderPlaylist() {
     const title = t.title || 'Titre inconnu';
     const artist = t.artist || 'Artiste inconnu';
     const duration = t.duration || '';
-    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
+    const link = t.spotify_url || `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
 
     const div = document.createElement('div');
     div.className = 'track';
     div.innerHTML = `
       <span class="num">${i + 1}</span>
       <div class="info">
-        <a href="${searchUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
+        <a href="${link}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
           <div class="t">${escapeHtml(title)}</div>
           <div class="a">${escapeHtml(artist)}</div>
         </a>
@@ -606,143 +502,38 @@ function copyList() {
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
-function normalize(str) {
-  return (str || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+async function createSpotifyPlaylist() {
+  if (isCreatingSpotifyPlaylist) return;
+  isCreatingSpotifyPlaylist = true;
 
-function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
-  if (!items?.length) return null;
+  const spotifyBtn = document.getElementById('spotify-create-btn');
+  if (spotifyBtn) spotifyBtn.disabled = true;
 
-  const nt = normalize(wantedTitle);
-  const na = normalize(wantedArtist);
-
-  let best = null;
-  let bestScore = -Infinity;
-
-  for (const item of items) {
-    const itemTitle = normalize(item.name);
-    const artistNames = (item.artists || []).map(a => normalize(a.name));
-    const joinedArtists = artistNames.join(' ');
-
-    const titleExact = itemTitle === nt;
-    const titleClose = itemTitle.includes(nt) || nt.includes(itemTitle);
-
-    const artistExact = artistNames.some(a => a === na);
-    const artistClose = artistNames.some(a => a.includes(na) || na.includes(a));
-
-    if (!artistExact && !artistClose) continue;
-
-    let score = 0;
-    if (titleExact) score += 100;
-    else if (titleClose) score += 40;
-    else score -= 100;
-
-    if (artistExact) score += 200;
-    else if (artistClose) score += 120;
-
-    const full = `${itemTitle} ${joinedArtists}`;
-    if (full.includes('karaoke')) score -= 200;
-    if (full.includes('tribute')) score -= 200;
-    if (full.includes('cover')) score -= 120;
-    if (full.includes('remix')) score -= 60;
-    if (full.includes('live')) score -= 30;
-
-    if (score > bestScore) {
-      bestScore = score;
-      best = item;
-    }
-  }
-
-  return best;
-}
-
-async function resolveTrackUri(trackTitle, trackArtist) {
-  const key = normalize(`${trackTitle}|||${trackArtist}`);
-
-  if (trackUriCache.has(key)) {
-    return trackUriCache.get(key);
-  }
-
-  const query = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
-  const sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`);
-  const sData = await sRes.json();
-  const items = sData.tracks?.items || [];
-  const winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
-  const uri = winner?.uri || null;
-
-  trackUriCache.set(key, uri);
-  saveTrackUriCache();
-
-  return uri;
-}
-
-function buildUniqueTracks(inputTracks) {
-  const uniqueTracks = [];
-  const seen = new Set();
-
-  for (const t of inputTracks) {
-    const trackTitle = (t.title || '').trim();
-    const trackArtist = (t.artist || '').trim();
-    const key = normalize(`${trackTitle}|||${trackArtist}`);
-
-    if (!trackTitle || !trackArtist) continue;
-    if (seen.has(key)) continue;
-
-    seen.add(key);
-    uniqueTracks.push({
-      title: trackTitle,
-      artist: trackArtist,
-      duration: t.duration || '',
-      _key: key
-    });
-  }
-
-  return uniqueTracks;
-}
-
-async function addUrisToPlaylist(playlistId, uris) {
-  if (!uris.length) return;
-
-  setLoading(true, 'Ajout des morceaux…');
-
-  for (let i = 0; i < uris.length; i += 100) {
-    const chunk = uris.slice(i, i + 100);
-
-    const addRes = await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uris: chunk })
-    });
-
-    const addData = await addRes.json();
-
-    if (!addRes.ok) {
-      throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+  try {
+    if (!tracks.length) {
+      toast('Aucun morceau à envoyer', 'error');
+      return;
     }
 
-    if (i + 100 < uris.length) {
-      await sleep(1200);
+    const hasToken = await ensureSpotifyToken();
+    if (!hasToken) {
+      toast("Connecte-toi d'abord à Spotify", 'error');
+      return;
     }
-  }
-}
 
-async function processPlaylistBuild(existingBuild = null) {
-  const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
+    if (!spotifyUserId) {
+      await fetchUserId();
+    }
 
-  let build = existingBuild;
-  let playlistId = build?.playlistId || null;
-  let uniqueTracks = build?.uniqueTracks || null;
-  let currentIndex = build?.currentIndex || 0;
-  let resolvedUris = build?.resolvedUris || [];
-  let notFound = build?.notFound || [];
+    const uris = tracks.map(t => t.uri).filter(Boolean);
 
-  if (!build) {
+    if (!uris.length) {
+      throw new Error('Aucun URI Spotify valide reçu du serveur');
+    }
+
+    const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
+    setLoading(true, 'Création de la playlist…');
+
     const plRes = await spotifyFetch('https://api.spotify.com/v1/me/playlists', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -759,151 +550,31 @@ async function processPlaylistBuild(existingBuild = null) {
       throw new Error(pl.error?.message || 'Erreur création playlist');
     }
 
-    playlistId = pl.id;
-    uniqueTracks = buildUniqueTracks(tracks);
-    currentIndex = 0;
-    resolvedUris = [];
-    notFound = [];
+    setLoading(true, 'Ajout des morceaux…');
 
-    build = {
-      version: 1,
-      playlistId,
-      playlistTitle: title,
-      uniqueTracks,
-      currentIndex,
-      resolvedUris,
-      notFound,
-      createdAt: Date.now()
-    };
+    for (let i = 0; i < uris.length; i += 100) {
+      const chunk = uris.slice(i, i + 100);
 
-    savePendingBuild(build);
-  }
+      const addRes = await spotifyFetch(`https://api.spotify.com/v1/playlists/${pl.id}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uris: chunk })
+      });
 
-  setLoading(true, `Recherche des titres… ${currentIndex}/${uniqueTracks.length}`);
+      const addData = await addRes.json();
 
-  for (let i = currentIndex; i < uniqueTracks.length; i++) {
-    const t = uniqueTracks[i];
-    setLoading(true, `Recherche des titres… ${i + 1}/${uniqueTracks.length}`);
-
-    try {
-      const uri = await resolveTrackUri(t.title, t.artist);
-
-      if (uri) resolvedUris.push(uri);
-      else notFound.push(`${t.title} - ${t.artist}`);
-
-      build.currentIndex = i + 1;
-      build.resolvedUris = resolvedUris;
-      build.notFound = notFound;
-      savePendingBuild(build);
-
-      await sleep(900);
-    } catch (e) {
-      if (e.isRateLimit || e.isCooldown) {
-        build.currentIndex = i;
-        build.resolvedUris = resolvedUris;
-        build.notFound = notFound;
-        savePendingBuild(build);
-        throw e;
+      if (!addRes.ok) {
+        throw new Error(addData.error?.message || 'Erreur ajout morceaux');
       }
-      throw e;
-    }
-  }
-
-  if (!resolvedUris.length) {
-    throw new Error('Aucun morceau trouvé sur Spotify');
-  }
-
-  await addUrisToPlaylist(playlistId, resolvedUris);
-
-  clearPendingBuild();
-
-  let msg = `Playlist créée ! ${resolvedUris.length}/${uniqueTracks.length} titres ajoutés.`;
-  if (notFound.length > 0) {
-    msg += ` ${notFound.length} introuvable(s).`;
-    console.warn('Introuvables :', notFound);
-  }
-
-  toast(msg, 'success');
-}
-
-async function createSpotifyPlaylist() {
-  if (isCreatingSpotifyPlaylist) return;
-
-  isCreatingSpotifyPlaylist = true;
-  const createBtn = getSpotifyCreateBtn();
-  const resumeBtn = getSpotifyResumeBtn();
-  if (createBtn) createBtn.disabled = true;
-  if (resumeBtn) resumeBtn.disabled = true;
-
-  try {
-    if (!tracks.length) {
-      toast('Aucun morceau à envoyer', 'error');
-      return;
     }
 
-    if (getPendingBuild()) {
-      toast('Une reprise Spotify est déjà en attente. Utilise “Reprendre l’envoi Spotify”.', 'warning');
-      return;
-    }
-
-    const hasToken = await ensureSpotifyToken();
-    if (!hasToken) {
-      toast("Connecte-toi d'abord à Spotify", 'error');
-      return;
-    }
-
-    if (!spotifyUserId) {
-      await fetchUserId();
-    }
-
-    setLoading(true, 'Création de la playlist…');
-    await processPlaylistBuild(null);
+    toast(`Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`, 'success');
   } catch (e) {
     console.error(e);
-    toast('Erreur Spotify : ' + e.message, e.isRateLimit || e.isCooldown ? 'warning' : 'error');
+    toast('Erreur Spotify : ' + e.message, 'error');
   } finally {
     isCreatingSpotifyPlaylist = false;
-    if (createBtn) createBtn.disabled = false;
-    if (resumeBtn) resumeBtn.disabled = false;
-    setLoading(false);
-  }
-}
-
-async function resumeSpotifyPlaylist() {
-  if (isCreatingSpotifyPlaylist) return;
-
-  const pending = getPendingBuild();
-  if (!pending) {
-    toast('Aucune reprise Spotify en attente.', 'warning');
-    return;
-  }
-
-  isCreatingSpotifyPlaylist = true;
-  const createBtn = getSpotifyCreateBtn();
-  const resumeBtn = getSpotifyResumeBtn();
-  if (createBtn) createBtn.disabled = true;
-  if (resumeBtn) resumeBtn.disabled = true;
-
-  try {
-    const hasToken = await ensureSpotifyToken();
-    if (!hasToken) {
-      toast("Connecte-toi d'abord à Spotify", 'error');
-      return;
-    }
-
-    if (!spotifyUserId) {
-      await fetchUserId();
-    }
-
-    setLoading(true, 'Reprise Spotify…');
-    await processPlaylistBuild(pending);
-  } catch (e) {
-    console.error(e);
-    toast('Erreur Spotify : ' + e.message, e.isRateLimit || e.isCooldown ? 'warning' : 'error');
-  } finally {
-    isCreatingSpotifyPlaylist = false;
-    if (createBtn) createBtn.disabled = false;
-    if (resumeBtn) resumeBtn.disabled = false;
+    if (spotifyBtn) spotifyBtn.disabled = false;
     setLoading(false);
   }
 }
@@ -918,7 +589,7 @@ function toast(msg, type) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.className = `toast ${type || ''} show`;
-  setTimeout(() => el.classList.remove('show'), 4500);
+  setTimeout(() => el.classList.remove('show'), 4000);
 }
 
 function escapeHtml(str) {
@@ -932,8 +603,9 @@ function escapeHtml(str) {
 
 (async function init() {
   const handled = await handleCallback();
-  if (!handled) loadConfig();
-  updateResumeUI();
+  if (!handled) {
+    loadConfig();
+  }
 })();
 </script>
 </body>
