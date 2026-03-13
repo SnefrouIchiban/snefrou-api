@@ -426,18 +426,34 @@ async function generate() {
       body: JSON.stringify({ prompt, nb })
     });
 
-    const parsed = await res.json();
-    console.log('GENERATE STATUS', res.status, parsed);
+    const rawText = await res.text();
+    let parsed = null;
+
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = null;
+    }
+
+    console.log('GENERATE STATUS', res.status);
+    console.log('GENERATE RAW TEXT', rawText);
+    console.log('GENERATE PARSED', parsed);
 
     if (!res.ok) {
-      const msg = parsed?.error || 'Erreur serveur';
+      const msg = parsed?.error || rawText || 'Erreur serveur';
       throw new Error(msg);
     }
 
-    tracks = Array.isArray(parsed.tracks) ? parsed.tracks : [];
+    if (!parsed || !Array.isArray(parsed.tracks)) {
+      throw new Error('Réponse serveur invalide');
+    }
+
+    tracks = parsed.tracks;
     console.log('TRACKS FROM SERVER', tracks);
     console.log('FIRST TRACK', tracks[0]);
-    document.getElementById('playlist-title').value = parsed.playlist_title || 'Ma playlist';
+
+    document.getElementById('playlist-title').value =
+      parsed.playlist_title || 'Ma playlist';
 
     renderPlaylist();
     document.getElementById('playlist-zone').classList.add('visible');
@@ -512,6 +528,11 @@ async function createSpotifyPlaylist() {
   if (spotifyBtn) spotifyBtn.disabled = true;
 
   try {
+    if (!tracks.length) {
+      toast('Aucun morceau à envoyer', 'error');
+      return;
+    }
+
     const hasToken = await ensureSpotifyToken();
     if (!hasToken) {
       toast("Connecte-toi d'abord à Spotify", 'error');
@@ -522,9 +543,12 @@ async function createSpotifyPlaylist() {
       await fetchUserId();
     }
 
-    const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
+    console.log('TRACKS FROM SERVER', tracks);
+    console.log('FIRST TRACK', tracks[0]);
+
     const uris = tracks.map(t => t.uri).filter(Boolean);
 
+    const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
     setLoading(true, 'Création de la playlist…');
 
     const plRes = await spotifyFetch('https://api.spotify.com/v1/me/playlists', {
