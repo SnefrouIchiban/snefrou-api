@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Snefrou — Générateur de playlists</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
@@ -63,7 +63,7 @@
   .banner.visible { display: block; }
   .banner.success { border-color: rgba(29,185,84,0.3); color: var(--green); }
   .banner.error { border-color: rgba(224,90,90,0.3); color: var(--red); }
-  .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; font-size: 12px; color: var(--text); opacity: 0; transform: translateY(8px); transition: all 0.25s; z-index: 200; pointer-events: none; max-width: 420px; }
+  .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; font-size: 12px; color: var(--text); opacity: 0; transform: translateY(8px); transition: all 0.25s; z-index: 200; pointer-events: none; max-width: 340px; }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.success { border-color: rgba(29,185,84,0.4); color: var(--green); }
   .toast.error { border-color: rgba(224,90,90,0.4); color: var(--red); }
@@ -98,7 +98,7 @@
     <div class="banner" id="banner"></div>
 
     <div class="prompt-zone">
-      <textarea id="prompt" placeholder="Décris ta playlist…" rows="4"></textarea>
+      <textarea id="prompt" placeholder="Décris ta playlist… jazz maghrébin sophistiqué, post-bop mélancolique années 60, électro minimaliste berlinoise…" rows="4"></textarea>
     </div>
 
     <div class="generate-row">
@@ -152,7 +152,9 @@ async function sha256(plain) {
 }
 
 function base64urlencode(input) {
-  if (input instanceof ArrayBuffer) input = new Uint8Array(input);
+  if (input instanceof ArrayBuffer) {
+    input = new Uint8Array(input);
+  }
   return btoa(String.fromCharCode(...input))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -255,7 +257,11 @@ async function ensureSpotifyToken() {
   return await refreshSpotifyToken();
 }
 
-async function spotifyFetch(url, options = {}, retry401 = true) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function spotifyFetch(url, options = {}, retry401 = true, attempt = 0) {
   const ok = await ensureSpotifyToken();
   if (!ok) {
     throw new Error('Session Spotify expirée. Reconnecte-toi.');
@@ -283,8 +289,15 @@ async function spotifyFetch(url, options = {}, retry401 = true) {
   }
 
   if (res.status === 429) {
-    const retryAfter = parseInt(res.headers.get('Retry-After') || '5', 10);
-    throw new Error(`Spotify rate-limit l’app. Attends ${retryAfter} seconde(s) avant de recommencer.`);
+    const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10);
+    const extraBackoff = Math.min(8000, attempt * 1500);
+    await sleep((retryAfter * 1000) + extraBackoff + 500);
+
+    if (attempt >= 4) {
+      throw new Error('Spotify bloque encore les requêtes. Réessaie plus tard.');
+    }
+
+    return spotifyFetch(url, options, retry401, attempt + 1);
   }
 
   return res;
@@ -473,14 +486,14 @@ function renderPlaylist() {
     const title = t.title || 'Titre inconnu';
     const artist = t.artist || 'Artiste inconnu';
     const duration = t.duration || '';
-    const link = t.spotify_url || `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
+    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
 
     const div = document.createElement('div');
     div.className = 'track';
     div.innerHTML = `
       <span class="num">${i + 1}</span>
       <div class="info">
-        <a href="${link}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
+        <a href="${searchUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
           <div class="t">${escapeHtml(title)}</div>
           <div class="a">${escapeHtml(artist)}</div>
         </a>
@@ -520,6 +533,72 @@ function copyList() {
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
+function normalize(str) {
+  return (str || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
+  if (!items?.length) return null;
+
+  const nt = normalize(wantedTitle);
+  const na = normalize(wantedArtist);
+
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const item of items) {
+    const itemTitle = normalize(item.name);
+    const artistNames = (item.artists || []).map(a => normalize(a.name));
+    const joinedArtists = artistNames.join(' ');
+
+    const titleExact = itemTitle === nt;
+    const titleClose = itemTitle.includes(nt) || nt.includes(itemTitle);
+
+    const artistExact = artistNames.some(a => a === na);
+    const artistClose = artistNames.some(a => a.includes(na) || na.includes(a));
+
+    if (!artistExact && !artistClose) continue;
+
+    let score = 0;
+
+    if (titleExact) score += 100;
+    else if (titleClose) score += 40;
+    else score -= 100;
+
+    if (artistExact) score += 200;
+    else if (artistClose) score += 120;
+
+    const full = `${itemTitle} ${joinedArtists}`;
+    if (full.includes('karaoke')) score -= 200;
+    if (full.includes('tribute')) score -= 200;
+    if (full.includes('cover')) score -= 120;
+    if (full.includes('remix')) score -= 60;
+    if (full.includes('live')) score -= 30;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
+    }
+  }
+
+  return best;
+}
+
+async function resolveTrackUri(trackTitle, trackArtist) {
+  const query = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
+  const sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`);
+  const sData = await sRes.json();
+  const items = sData.tracks?.items || [];
+  const winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
+  return winner?.uri || null;
+}
+
 async function createSpotifyPlaylist() {
   if (isCreatingSpotifyPlaylist) return;
   isCreatingSpotifyPlaylist = true;
@@ -530,13 +609,6 @@ async function createSpotifyPlaylist() {
   try {
     if (!tracks.length) {
       toast('Aucun morceau à envoyer', 'error');
-      return;
-    }
-
-    const uris = tracks.map(t => t.uri).filter(Boolean);
-
-    if (!uris.length) {
-      toast("Impossible de créer la playlist Spotify : aucun morceau n'a d'URI Spotify.", 'error');
       return;
     }
 
@@ -569,6 +641,48 @@ async function createSpotifyPlaylist() {
       throw new Error(pl.error?.message || 'Erreur création playlist');
     }
 
+    setLoading(true, 'Préparation des titres…');
+
+    const uniqueTracks = [];
+    const seen = new Set();
+
+    for (const t of tracks) {
+      const trackTitle = (t.title || '').trim();
+      const trackArtist = (t.artist || '').trim();
+      const key = normalize(`${trackTitle}|||${trackArtist}`);
+
+      if (!trackTitle || !trackArtist) continue;
+      if (seen.has(key)) continue;
+
+      seen.add(key);
+      uniqueTracks.push({ ...t, _key: key });
+    }
+
+    const uris = [];
+    const notFound = [];
+
+    for (let i = 0; i < uniqueTracks.length; i++) {
+      const t = uniqueTracks[i];
+      const trackTitle = (t.title || '').trim();
+      const trackArtist = (t.artist || '').trim();
+
+      setLoading(true, `Recherche des titres… ${i + 1}/${uniqueTracks.length}`);
+
+      const uri = await resolveTrackUri(trackTitle, trackArtist);
+
+      if (uri) {
+        uris.push(uri);
+      } else {
+        notFound.push(`${trackTitle} - ${trackArtist}`);
+      }
+
+      await sleep(1200);
+    }
+
+    if (uris.length === 0) {
+      throw new Error('Aucun morceau trouvé sur Spotify');
+    }
+
     setLoading(true, 'Ajout des morceaux…');
 
     for (let i = 0; i < uris.length; i += 100) {
@@ -585,9 +699,19 @@ async function createSpotifyPlaylist() {
       if (!addRes.ok) {
         throw new Error(addData.error?.message || 'Erreur ajout morceaux');
       }
+
+      if (i + 100 < uris.length) {
+        await sleep(1500);
+      }
     }
 
-    toast(`Playlist créée sur Spotify ! ${uris.length}/${tracks.length} titres ajoutés.`, 'success');
+    let msg = `Playlist créée ! ${uris.length}/${uniqueTracks.length} titres ajoutés.`;
+    if (notFound.length > 0) {
+      msg += ` ${notFound.length} introuvable(s).`;
+      console.warn('Introuvables :', notFound);
+    }
+
+    toast(msg, 'success');
   } catch (e) {
     console.error(e);
     toast('Erreur Spotify : ' + e.message, 'error');
