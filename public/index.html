@@ -481,7 +481,9 @@ function loadConfig() {
     spotifyUserId = userId || null;
     setConnected(true);
   } else {
-    disconnectSpotify(false);
+    spotifyToken = null;
+    spotifyUserId = null;
+    setConnected(false);
   }
 }
 
@@ -936,8 +938,9 @@ function escapeHtml(str) {
     .replaceAll("'", '&#039;');
 }
 
-loadConfig();
-handleCallback();
+handleCallback().then(() => {
+  loadConfig();
+});
 </script>
 </body>
 </html>
