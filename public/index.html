@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Snefrou — Générateur de playlists</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
@@ -137,7 +137,16 @@
 
 <script>
 const CLIENT_ID = 'cbdd9b0320874109a3640fe744b05c85';
-const REDIRECT_URI = window.location.origin;
+const API_BASE = 'https://snefrou-api.vercel.app';
+
+/*
+  Important :
+  si Spotify refuse encore le redirect URI, remplace cette ligne par l’URL exacte
+  enregistrée dans ton dashboard Spotify, par ex :
+  const REDIRECT_URI = 'https://ton-site.github.io/';
+*/
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+
 const SCOPES = 'playlist-modify-public playlist-modify-private';
 
 let tracks = [];
@@ -149,15 +158,16 @@ async function sha256(plain) {
   return crypto.subtle.digest('SHA-256', enc);
 }
 
-function base64urlencode(a) {
-  return btoa(String.fromCharCode(...new Uint8Array(a)))
-    .replace(/\+/g,'-')
-    .replace(/\//g,'_')
+function base64urlencode(input) {
+  return btoa(String.fromCharCode(...new Uint8Array(input)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
     .replace(/=+$/,'');
 }
 
 async function generatePKCE() {
-  const verifier = base64urlencode(crypto.getRandomValues(new Uint8Array(32)));
+  const verifierBytes = crypto.getRandomValues(new Uint8Array(64));
+  const verifier = base64urlencode(verifierBytes);
   const challenge = base64urlencode(await sha256(verifier));
   return { verifier, challenge };
 }
@@ -167,12 +177,16 @@ function setConnected(yes) {
   document.getElementById('auth-text').textContent = yes ? 'Connecté à Spotify' : 'Non connecté';
 }
 
+function clearOAuthTemp() {
+  localStorage.removeItem('pkce_verifier');
+  localStorage.removeItem('spotify_oauth_state');
+}
+
 function disconnectSpotify(silent = false) {
   localStorage.removeItem('spotify_token');
   localStorage.removeItem('spotify_token_exp');
   localStorage.removeItem('spotify_user_id');
-  localStorage.removeItem('pkce_verifier');
-  localStorage.removeItem('spotify_oauth_state');
+  localStorage.removeItem('spotify_refresh_token');
   spotifyToken = null;
   spotifyUserId = null;
   setConnected(false);
@@ -189,8 +203,96 @@ function loadConfig() {
     spotifyUserId = userId || null;
     setConnected(true);
   } else {
-    disconnectSpotify(true);
+    spotifyToken = null;
+    spotifyUserId = null;
+    setConnected(false);
   }
+}
+
+async function refreshSpotifyToken() {
+  const refreshToken = localStorage.getItem('spotify_refresh_token');
+  if (!refreshToken) return false;
+
+  try {
+    const res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: CLIENT_ID
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.access_token) {
+      disconnectSpotify(true);
+      return false;
+    }
+
+    spotifyToken = data.access_token;
+    localStorage.setItem('spotify_token', spotifyToken);
+    localStorage.setItem('spotify_token_exp', String(Date.now() + (data.expires_in * 1000)));
+
+    if (data.refresh_token) {
+      localStorage.setItem('spotify_refresh_token', data.refresh_token);
+    }
+
+    setConnected(true);
+    return true;
+  } catch (e) {
+    console.error('refreshSpotifyToken error', e);
+    disconnectSpotify(true);
+    return false;
+  }
+}
+
+async function ensureSpotifyToken() {
+  const tok = localStorage.getItem('spotify_token');
+  const exp = localStorage.getItem('spotify_token_exp');
+
+  if (tok && exp && Date.now() < parseInt(exp, 10) - 10000) {
+    spotifyToken = tok;
+    return true;
+  }
+
+  return await refreshSpotifyToken();
+}
+
+async function spotifyFetch(url, options = {}, retry = true) {
+  const ok = await ensureSpotifyToken();
+  if (!ok) {
+    throw new Error('Session Spotify expirée. Reconnecte-toi.');
+  }
+
+  const headers = {
+    ...(options.headers || {}),
+    Authorization: `Bearer ${spotifyToken}`
+  };
+
+  const res = await fetch(url, { ...options, headers });
+
+  if (res.status === 401 && retry) {
+    const refreshed = await refreshSpotifyToken();
+    if (!refreshed) {
+      throw new Error('Session Spotify expirée. Reconnecte-toi.');
+    }
+
+    const retryHeaders = {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${spotifyToken}`
+    };
+
+    return fetch(url, { ...options, headers: retryHeaders });
+  }
+
+  if (res.status === 429) {
+    const retryAfter = res.headers.get('Retry-After');
+    throw new Error(`Trop de requêtes Spotify${retryAfter ? ' — réessaie dans ' + retryAfter + ' seconde(s)' : ''}`);
+  }
+
+  return res;
 }
 
 async function connectSpotify() {
@@ -226,11 +328,12 @@ async function handleCallback() {
 
     if (error) {
       showBanner('Erreur Spotify : ' + error, 'error');
+      clearOAuthTemp();
       window.history.replaceState({}, document.title, window.location.pathname);
-      return;
+      return false;
     }
 
-    if (!code) return;
+    if (!code) return false;
 
     const savedState = localStorage.getItem('spotify_oauth_state');
     const verifier = localStorage.getItem('pkce_verifier');
@@ -238,7 +341,7 @@ async function handleCallback() {
     if (!returnedState || returnedState !== savedState || !verifier) {
       showBanner('Session expirée, reconnecte-toi.', 'error');
       window.history.replaceState({}, document.title, window.location.pathname);
-      return;
+      return false;
     }
 
     const res = await fetch('https://accounts.spotify.com/api/token', {
@@ -263,17 +366,22 @@ async function handleCallback() {
     localStorage.setItem('spotify_token', spotifyToken);
     localStorage.setItem('spotify_token_exp', String(Date.now() + (data.expires_in * 1000)));
 
-    localStorage.removeItem('pkce_verifier');
-    localStorage.removeItem('spotify_oauth_state');
+    if (data.refresh_token) {
+      localStorage.setItem('spotify_refresh_token', data.refresh_token);
+    }
+
+    clearOAuthTemp();
 
     setConnected(true);
     await fetchUserId();
 
     showBanner('Connecté à Spotify !', 'success');
     window.history.replaceState({}, document.title, window.location.pathname);
+    return true;
   } catch (e) {
     console.error(e);
     showBanner('Erreur Spotify : ' + e.message, 'error');
+    return false;
   }
 }
 
@@ -287,19 +395,9 @@ function showBanner(msg, type) {
 }
 
 async function fetchUserId() {
-  if (!spotifyToken) return null;
-
   try {
-    const res = await fetch('https://api.spotify.com/v1/me', {
-      headers: { Authorization: `Bearer ${spotifyToken}` }
-    });
-
+    const res = await spotifyFetch('https://api.spotify.com/v1/me');
     const data = await res.json();
-
-    if (res.status === 401) {
-      disconnectSpotify(true);
-      throw new Error('Session Spotify expirée');
-    }
 
     if (!res.ok || !data.id) {
       throw new Error(data.error?.message || 'Impossible de récupérer l’utilisateur Spotify');
@@ -309,7 +407,7 @@ async function fetchUserId() {
     localStorage.setItem('spotify_user_id', spotifyUserId);
     return spotifyUserId;
   } catch (e) {
-    console.error(e);
+    console.error('fetchUserId error', e);
     return null;
   }
 }
@@ -325,7 +423,7 @@ async function generate() {
   setLoading(true, 'Génération en cours…');
 
   try {
-    const res = await fetch('/api/generate', {
+    const res = await fetch(`${API_BASE}/api/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, nb })
@@ -367,7 +465,7 @@ function renderPlaylist() {
     div.innerHTML = `
       <span class="num">${i + 1}</span>
       <div class="info">
-        <a href="${searchUrl}" target="_blank" style="color:var(--text);text-decoration:none">
+        <a href="${searchUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
           <div class="t">${escapeHtml(title)}</div>
           <div class="a">${escapeHtml(artist)}</div>
         </a>
@@ -408,13 +506,14 @@ function copyList() {
 }
 
 async function createSpotifyPlaylist() {
-  if (!spotifyToken) {
-    toast("Connecte-toi d'abord à Spotify", 'error');
+  if (!tracks.length) {
+    toast('Aucun morceau à envoyer', 'error');
     return;
   }
 
-  if (!tracks.length) {
-    toast('Aucun morceau à envoyer', 'error');
+  const hasToken = await ensureSpotifyToken();
+  if (!hasToken) {
+    toast("Connecte-toi d'abord à Spotify", 'error');
     return;
   }
 
@@ -426,23 +525,15 @@ async function createSpotifyPlaylist() {
   setLoading(true, 'Création de la playlist…');
 
   try {
-    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
+    const plRes = await spotifyFetch('https://api.spotify.com/v1/me/playlists', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: title,
         description: 'Généré par Snefrou',
         public: false
       })
     });
-
-    if (plRes.status === 401) {
-      disconnectSpotify(true);
-      throw new Error('Session Spotify expirée. Reconnecte-toi.');
-    }
 
     const pl = await plRes.json();
 
@@ -465,30 +556,14 @@ async function createSpotifyPlaylist() {
       }
 
       const strictQuery = encodeURIComponent(`track:"${trackTitle}" artist:"${trackArtist}"`);
-      let sRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=10`, {
-        headers: { Authorization: `Bearer ${spotifyToken}` }
-      });
-
-      if (sRes.status === 401) {
-        disconnectSpotify(true);
-        throw new Error('Session Spotify expirée. Reconnecte-toi.');
-      }
-
+      let sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=10`);
       let sData = await sRes.json();
       let items = sData.tracks?.items || [];
       let winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
 
       if (!winner) {
         const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
-        sRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`, {
-          headers: { Authorization: `Bearer ${spotifyToken}` }
-        });
-
-        if (sRes.status === 401) {
-          disconnectSpotify(true);
-          throw new Error('Session Spotify expirée. Reconnecte-toi.');
-        }
-
+        sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`);
         sData = await sRes.json();
         items = sData.tracks?.items || [];
         winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
@@ -507,29 +582,24 @@ async function createSpotifyPlaylist() {
 
     setLoading(true, 'Ajout des morceaux…');
 
-    const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/items`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ uris })
-    });
+    for (let i = 0; i < uris.length; i += 100) {
+      const chunk = uris.slice(i, i + 100);
+      const addRes = await spotifyFetch(`https://api.spotify.com/v1/playlists/${pl.id}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uris: chunk })
+      });
 
-    if (addRes.status === 401) {
-      disconnectSpotify(true);
-      throw new Error('Session Spotify expirée. Reconnecte-toi.');
-    }
-
-    const addData = await addRes.json();
-
-    if (!addRes.ok) {
-      throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+      const addData = await addRes.json();
+      if (!addRes.ok) {
+        throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+      }
     }
 
     let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
     if (notFound.length > 0) {
       msg += ` ${notFound.length} introuvable(s).`;
+      console.warn('Introuvables :', notFound);
     }
 
     toast(msg, 'success');
@@ -571,9 +641,7 @@ function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
     const artistExact = artistNames.some(a => a === na);
     const artistClose = artistNames.some(a => a.includes(na) || na.includes(a));
 
-    if (!artistExact && !artistClose) {
-      continue;
-    }
+    if (!artistExact && !artistClose) continue;
 
     let score = 0;
 
@@ -622,8 +690,12 @@ function escapeHtml(str) {
     .replaceAll("'", '&#039;');
 }
 
-loadConfig();
-handleCallback();
+(async function init() {
+  const handled = await handleCallback();
+  if (!handled) {
+    loadConfig();
+  }
+})();
 </script>
 </body>
 </html>
