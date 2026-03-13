@@ -435,6 +435,8 @@ async function generate() {
     }
 
     tracks = Array.isArray(parsed.tracks) ? parsed.tracks : [];
+    console.log('TRACKS FROM SERVER', tracks);
+    console.log('FIRST TRACK', tracks[0]);
     document.getElementById('playlist-title').value = parsed.playlist_title || 'Ma playlist';
 
     renderPlaylist();
@@ -525,10 +527,14 @@ async function createSpotifyPlaylist() {
       await fetchUserId();
     }
 
+    console.log('TRACKS FROM SERVER', tracks);
+    console.log('FIRST TRACK', tracks[0]);
+
     const uris = tracks.map(t => t.uri).filter(Boolean);
 
     if (!uris.length) {
-      throw new Error('Aucun URI Spotify valide reçu du serveur');
+      toast('Playlist générée, mais aucun morceau n’a pu être validé par Spotify.', 'error');
+      return;
     }
 
     const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
