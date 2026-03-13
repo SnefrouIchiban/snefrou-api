@@ -12,26 +12,134 @@
     --text: #f0ede8; --text-muted: #6b6560; --text-secondary: #9d9890;
     --accent: #c8b89a; --green: #1DB954; --green-dim: rgba(29,185,84,0.12); --red: #e05a5a;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; min-height: 100vh; line-height: 1.6; }
-  .app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
-  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 2rem; }
-  .logo { font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--accent); letter-spacing: -0.5px; }
-  .logo span { font-style: italic; color: var(--text-muted); font-size: 12px; font-family: 'DM Mono', monospace; display: block; margin-top: 2px; font-weight: 300; }
-  .section-label { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.75rem; }
-  .auth-status { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text-secondary); }
-  .auth-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
-  .auth-status.connected .dot { background: var(--green); }
-  .auth-status.connected { color: var(--text); border-color: rgba(29,185,84,0.2); }
-  .btn { width: 100%; padding: 11px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 12px; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); text-align: left; }
-  .btn:hover { border-color: var(--border-hover); color: var(--text); background: var(--surface2); }
-  .btn.primary { background: var(--accent); color: #1a1600; border-color: var(--accent); font-weight: 500; text-align: center; }
-  .btn.primary:hover { background: #ddd0b8; }
-  .btn.spotify { background: var(--green-dim); border-color: rgba(29,185,84,0.3); color: var(--green); text-align: center; }
-  .btn.spotify:hover { background: rgba(29,185,84,0.2); }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .main { padding: 2rem 2.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+
+  .logo span {
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    display: block;
+    margin-top: 2px;
+    font-weight: 300;
+  }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .auth-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .auth-status .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .auth-status.connected .dot { background: var(--green); }
+
+  .auth-status.connected {
+    color: var(--text);
+    border-color: rgba(29,185,84,0.2);
+  }
+
+  .btn {
+    width: 100%;
+    padding: 11px 16px;
+    border-radius: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    text-align: left;
+  }
+
+  .btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+    background: var(--surface2);
+  }
+
+  .btn.primary {
+    background: var(--accent);
+    color: #1a1600;
+    border-color: var(--accent);
+    font-weight: 500;
+    text-align: center;
+  }
+
+  .btn.primary:hover { background: #ddd0b8; }
+
+  .btn.spotify {
+    background: var(--green-dim);
+    border-color: rgba(29,185,84,0.3);
+    color: var(--green);
+    text-align: center;
+  }
+
+  .btn.spotify:hover { background: rgba(29,185,84,0.2); }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .main {
+    padding: 2rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
 
   .prompt-zone textarea {
     width: 100%;
@@ -47,10 +155,24 @@
     resize: none;
     outline: none;
   }
-  .prompt-zone textarea::placeholder { color: var(--text-muted); font-style: italic; }
 
-  .advanced-wrap { display: flex; flex-direction: column; gap: 12px; }
-  .advanced-toggle { width: fit-content; padding: 8px 14px; font-size: 11px; }
+  .prompt-zone textarea::placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .advanced-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .advanced-toggle {
+    width: fit-content;
+    padding: 8px 14px;
+    font-size: 11px;
+  }
+
   .advanced-panel {
     display: none;
     border: 1px solid var(--border);
@@ -58,19 +180,28 @@
     border-radius: 10px;
     padding: 16px;
   }
+
   .advanced-panel.visible { display: block; }
+
   .advanced-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(220px, 1fr));
     gap: 12px;
   }
-  .field { display: flex; flex-direction: column; gap: 6px; }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
   .field label {
     font-size: 10px;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--text-muted);
   }
+
   .field input,
   .field select {
     width: 100%;
@@ -84,48 +215,207 @@
     outline: none;
   }
 
-  .generate-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .generate-row .btn { width: auto; padding: 10px 24px; }
-  .count-select { padding: 9px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px; outline: none; }
+  .generate-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .generate-row .btn {
+    width: auto;
+    padding: 10px 24px;
+  }
+
+  .count-select {
+    padding: 9px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    outline: none;
+  }
 
   .playlist-zone { display: none; }
   .playlist-zone.visible { display: block; }
-  .playlist-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap; }
-  .playlist-title-input { font-family: 'DM Serif Display', serif; font-size: 26px; color: var(--text); background: transparent; border: none; outline: none; border-bottom: 1px solid transparent; padding-bottom: 2px; flex: 1; min-width: 200px; }
-  .pl-actions { display: flex; gap: 8px; flex-shrink: 0; }
-  .pl-actions .btn { width: auto; padding: 8px 16px; font-size: 11px; }
-  .track-list { display: flex; flex-direction: column; gap: 2px; }
-  .track { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 16px; padding: 10px 14px; border-radius: 6px; border: 1px solid transparent; transition: all 0.15s; }
-  .track:hover { background: var(--surface); border-color: var(--border); }
-  .track .num { font-size: 11px; color: var(--text-muted); text-align: right; }
-  .track .info .t { font-size: 13px; color: var(--text); }
-  .track .info .a { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
-  .track .dur { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-  .track .remove-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; padding: 0 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
+
+  .playlist-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .playlist-title-input {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    outline: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .pl-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .pl-actions .btn {
+    width: auto;
+    padding: 8px 16px;
+    font-size: 11px;
+  }
+
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .track {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .track:hover {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+
+  .track .num {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+  }
+
+  .track .info .t {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .track .info .a {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .track .dur {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .track .remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 16px;
+    padding: 0 4px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
   .track:hover .remove-btn { opacity: 1; }
   .track .remove-btn:hover { color: var(--red); }
-  .playlist-footer { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
-  .pl-stats { font-size: 11px; color: var(--text-muted); }
 
-  .loading { display: none; align-items: center; gap: 12px; padding: 1rem 0; }
+  .playlist-footer {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .pl-stats {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .loading {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 1rem 0;
+  }
+
   .loading.visible { display: flex; }
-  .spinner { width: 16px; height: 16px; border: 1.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-text { font-size: 12px; color: var(--text-muted); }
 
-  .banner { display: none; padding: 12px 16px; border-radius: 8px; font-size: 12px; border: 1px solid var(--border); }
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .banner {
+    display: none;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+  }
+
   .banner.visible { display: block; }
   .banner.success { border-color: rgba(29,185,84,0.3); color: var(--green); }
   .banner.error { border-color: rgba(224,90,90,0.3); color: var(--red); }
 
-  .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; font-size: 12px; color: var(--text); opacity: 0; transform: translateY(8px); transition: all 0.25s; z-index: 200; pointer-events: none; max-width: 420px; }
-  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 12px;
+    color: var(--text);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.25s;
+    z-index: 200;
+    pointer-events: none;
+    max-width: 420px;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   .toast.success { border-color: rgba(29,185,84,0.4); color: var(--green); }
   .toast.error { border-color: rgba(224,90,90,0.4); color: var(--red); }
 
   @media (max-width: 980px) {
     .app { grid-template-columns: 1fr; }
-    .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar {
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
     .advanced-grid { grid-template-columns: 1fr; }
   }
 </style>
@@ -133,7 +423,9 @@
 <body>
 <div class="app">
   <div class="sidebar">
-    <div><div class="logo">Octopus Garden<span>curated playlists</span></div></div>
+    <div>
+      <div class="logo">Octopus Garden<span>curated playlists</span></div>
+    </div>
 
     <div>
       <div class="section-label">Spotify</div>
@@ -249,6 +541,7 @@
       </div>
 
       <div class="track-list" id="track-list"></div>
+
       <div class="playlist-footer">
         <span class="pl-stats" id="pl-stats"></span>
       </div>
@@ -274,8 +567,8 @@ async function sha256(plain) {
 
 function base64urlencode(a) {
   return btoa(String.fromCharCode(...new Uint8Array(a)))
-    .replace(/\+/g,'-')
-    .replace(/\//g,'_')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
     .replace(/=+$/,'');
 }
 
@@ -406,7 +699,9 @@ function showBanner(msg, type) {
   const b = document.getElementById('banner');
   b.textContent = msg;
   b.className = `banner visible ${type}`;
-  if (type === 'success') setTimeout(() => b.classList.remove('visible'), 5000);
+  if (type === 'success') {
+    setTimeout(() => b.classList.remove('visible'), 5000);
+  }
 }
 
 async function fetchUserId() {
@@ -418,7 +713,10 @@ async function fetchUserId() {
     });
 
     const data = await res.json();
-    if (!res.ok || !data.id) throw new Error(data.error?.message || 'Impossible de récupérer l’utilisateur Spotify');
+
+    if (!res.ok || !data.id) {
+      throw new Error(data.error?.message || 'Impossible de récupérer l’utilisateur Spotify');
+    }
 
     spotifyUserId = data.id;
     localStorage.setItem('spotify_user_id', spotifyUserId);
@@ -552,7 +850,9 @@ async function createSpotifyPlaylist() {
     return;
   }
 
-  if (!spotifyUserId) await fetchUserId();
+  if (!spotifyUserId) {
+    await fetchUserId();
+  }
 
   const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
   setLoading(true, 'Création de la playlist…');
@@ -572,7 +872,10 @@ async function createSpotifyPlaylist() {
     });
 
     const pl = await plRes.json();
-    if (!plRes.ok || !pl.id) throw new Error(pl.error?.message || 'Erreur création playlist');
+
+    if (!plRes.ok || !pl.id) {
+      throw new Error(pl.error?.message || 'Erreur création playlist');
+    }
 
     setLoading(true, 'Recherche des titres…');
 
@@ -588,20 +891,21 @@ async function createSpotifyPlaylist() {
         continue;
       }
 
-      const strictQuery = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
-      let sRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=5`, {
+      const strictQuery = encodeURIComponent(`track:"${trackTitle}" artist:"${trackArtist}"`);
+      let sRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=10`, {
         headers: { Authorization: `Bearer ${spotifyToken}` }
       });
-      let sData = await sRes.json();
 
+      let sData = await sRes.json();
       let items = sData.tracks?.items || [];
       let winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
 
       if (!winner) {
         const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
-        sRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=8`, {
+        sRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`, {
           headers: { Authorization: `Bearer ${spotifyToken}` }
         });
+
         sData = await sRes.json();
         items = sData.tracks?.items || [];
         winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
@@ -614,7 +918,9 @@ async function createSpotifyPlaylist() {
       }
     }
 
-    if (uris.length === 0) throw new Error('Aucun morceau trouvé sur Spotify');
+    if (uris.length === 0) {
+      throw new Error('Aucun morceau trouvé sur Spotify');
+    }
 
     setLoading(true, 'Ajout des morceaux…');
 
@@ -628,10 +934,16 @@ async function createSpotifyPlaylist() {
     });
 
     const addData = await addRes.json();
-    if (!addRes.ok) throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+
+    if (!addRes.ok) {
+      throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+    }
 
     let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
-    if (notFound.length > 0) msg += ` ${notFound.length} introuvable(s).`;
+    if (notFound.length > 0) {
+      msg += ` ${notFound.length} introuvable(s).`;
+    }
+
     toast(msg, 'success');
   } catch (e) {
     console.error(e);
@@ -662,21 +974,34 @@ function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
 
   for (const item of items) {
     const itemTitle = normalize(item.name);
-    const itemArtists = normalize((item.artists || []).map(a => a.name).join(' '));
+    const artistNames = (item.artists || []).map(a => normalize(a.name));
+    const joinedArtists = artistNames.join(' ');
+
+    const titleExact = itemTitle === nt;
+    const titleClose = itemTitle.includes(nt) || nt.includes(itemTitle);
+
+    const artistExact = artistNames.some(a => a === na);
+    const artistClose = artistNames.some(a => a.includes(na) || na.includes(a));
+
+    if (!artistExact && !artistClose) {
+      continue;
+    }
 
     let score = 0;
 
-    if (itemTitle === nt) score += 100;
-    else if (itemTitle.includes(nt) || nt.includes(itemTitle)) score += 60;
+    if (titleExact) score += 100;
+    else if (titleClose) score += 40;
+    else score -= 100;
 
-    if (itemArtists.includes(na) || na.includes(itemArtists)) score += 80;
+    if (artistExact) score += 200;
+    else if (artistClose) score += 120;
 
-    const full = `${itemTitle} ${itemArtists}`;
-    if (full.includes('karaoke')) score -= 120;
-    if (full.includes('tribute')) score -= 120;
-    if (full.includes('cover')) score -= 80;
-    if (full.includes('remix')) score -= 40;
-    if (full.includes('live')) score -= 25;
+    const full = `${itemTitle} ${joinedArtists}`;
+    if (full.includes('karaoke')) score -= 200;
+    if (full.includes('tribute')) score -= 200;
+    if (full.includes('cover')) score -= 120;
+    if (full.includes('remix')) score -= 60;
+    if (full.includes('live')) score -= 30;
 
     if (score > bestScore) {
       bestScore = score;
@@ -689,7 +1014,9 @@ function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
 
 function setLoading(on, msg) {
   document.getElementById('loading').classList.toggle('visible', on);
-  if (msg) document.getElementById('loading-text').textContent = msg;
+  if (msg) {
+    document.getElementById('loading-text').textContent = msg;
+  }
   document.getElementById('gen-btn').disabled = on;
 }
 
