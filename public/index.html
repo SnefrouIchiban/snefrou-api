@@ -167,6 +167,10 @@ async function generatePKCE() {
   return { verifier, challenge };
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function setConnected(yes) {
   document.getElementById('auth-status').classList.toggle('connected', yes);
   document.getElementById('auth-text').textContent = yes ? 'Connecté à Spotify' : 'Non connecté';
@@ -267,7 +271,7 @@ async function spotifyFetch(url, options = {}, retry = true) {
     Authorization: `Bearer ${spotifyToken}`
   };
 
-  const res = await fetch(url, { ...options, headers });
+  let res = await fetch(url, { ...options, headers });
 
   if (res.status === 401 && retry) {
     const refreshed = await refreshSpotifyToken();
@@ -280,12 +284,23 @@ async function spotifyFetch(url, options = {}, retry = true) {
       Authorization: `Bearer ${spotifyToken}`
     };
 
-    return fetch(url, { ...options, headers: retryHeaders });
+    res = await fetch(url, { ...options, headers: retryHeaders });
   }
 
   if (res.status === 429) {
-    const retryAfter = res.headers.get('Retry-After');
-    throw new Error(`Trop de requêtes Spotify${retryAfter ? ' — réessaie dans ' + retryAfter + ' seconde(s)' : ''}`);
+    const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10);
+    await sleep((retryAfter + 1) * 1000);
+
+    const retryHeaders = {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${spotifyToken}`
+    };
+
+    res = await fetch(url, { ...options, headers: retryHeaders });
+
+    if (res.status === 429) {
+      throw new Error(`Spotify bloque encore les requêtes. Réessaie dans ${retryAfter} seconde(s).`);
+    }
   }
 
   return res;
@@ -503,6 +518,15 @@ function copyList() {
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
+async function resolveTrackUri(trackTitle, trackArtist) {
+  const query = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
+  const sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`);
+  const sData = await sRes.json();
+  const items = sData.tracks?.items || [];
+  const winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
+  return winner?.uri || null;
+}
+
 async function createSpotifyPlaylist() {
   if (!tracks.length) {
     toast('Aucun morceau à envoyer', 'error');
@@ -544,7 +568,8 @@ async function createSpotifyPlaylist() {
     const uris = [];
     const notFound = [];
 
-    for (const t of tracks) {
+    for (let i = 0; i < tracks.length; i++) {
+      const t = tracks[i];
       const trackTitle = (t.title || '').trim();
       const trackArtist = (t.artist || '').trim();
 
@@ -553,25 +578,17 @@ async function createSpotifyPlaylist() {
         continue;
       }
 
-      const strictQuery = encodeURIComponent(`track:"${trackTitle}" artist:"${trackArtist}"`);
-      let sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=10`);
-      let sData = await sRes.json();
-      let items = sData.tracks?.items || [];
-      let winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
+      setLoading(true, `Recherche des titres… ${i + 1}/${tracks.length}`);
 
-      if (!winner) {
-        const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
-        sRes = await spotifyFetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`);
-        sData = await sRes.json();
-        items = sData.tracks?.items || [];
-        winner = pickBestSpotifyTrack(items, trackTitle, trackArtist);
-      }
+      const uri = await resolveTrackUri(trackTitle, trackArtist);
 
-      if (winner?.uri) {
-        uris.push(winner.uri);
+      if (uri) {
+        uris.push(uri);
       } else {
         notFound.push(`${trackTitle} - ${trackArtist}`);
       }
+
+      await sleep(350);
     }
 
     if (uris.length === 0) {
@@ -591,6 +608,10 @@ async function createSpotifyPlaylist() {
       const addData = await addRes.json();
       if (!addRes.ok) {
         throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+      }
+
+      if (i + 100 < uris.length) {
+        await sleep(500);
       }
     }
 
