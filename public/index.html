@@ -73,21 +73,30 @@
 <div class="app">
   <div class="sidebar">
     <div><div class="logo">Snefrou<span>playlist generator</span></div></div>
+
     <div>
       <div class="section-label">Spotify</div>
-      <div class="auth-status" id="auth-status"><div class="dot"></div><span id="auth-text">Non connecté</span></div>
+      <div class="auth-status" id="auth-status">
+        <div class="dot"></div>
+        <span id="auth-text">Non connecté</span>
+      </div>
       <button class="btn spotify" style="margin-top:10px" onclick="connectSpotify()">Se connecter à Spotify</button>
+      <button class="btn" style="margin-top:10px" onclick="disconnectSpotify()">Se déconnecter</button>
     </div>
+
     <div style="margin-top:auto">
       <div class="section-label">Statut</div>
       <div style="font-size:11px;color:var(--text-muted);line-height:1.8">Clé API gérée<br>côté serveur</div>
     </div>
   </div>
+
   <div class="main">
     <div class="banner" id="banner"></div>
+
     <div class="prompt-zone">
       <textarea id="prompt" placeholder="Décris ta playlist… jazz maghrébin sophistiqué, post-bop mélancolique années 60, électro minimaliste berlinoise…" rows="4"></textarea>
     </div>
+
     <div class="generate-row">
       <button class="btn primary" id="gen-btn" onclick="generate()">Générer</button>
       <select class="count-select" id="nb-tracks">
@@ -97,7 +106,12 @@
         <option value="30">30 titres</option>
       </select>
     </div>
-    <div class="loading" id="loading"><div class="spinner"></div><span class="loading-text" id="loading-text">Génération en cours…</span></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <span class="loading-text" id="loading-text">Génération en cours…</span>
+    </div>
+
     <div class="playlist-zone" id="playlist-zone">
       <div class="playlist-header">
         <input class="playlist-title-input" id="playlist-title" value="Ma playlist" />
@@ -106,37 +120,42 @@
           <button class="btn spotify" onclick="createSpotifyPlaylist()">Créer sur Spotify</button>
         </div>
       </div>
+
       <div class="track-list" id="track-list"></div>
-      <div class="playlist-footer"><span class="pl-stats" id="pl-stats"></span></div>
+      <div class="playlist-footer">
+        <span class="pl-stats" id="pl-stats"></span>
+      </div>
     </div>
   </div>
 </div>
+
 <div class="toast" id="toast"></div>
+
 <script>
 const CLIENT_ID = 'cbdd9b0320874109a3640fe744b05c85';
 const REDIRECT_URI = window.location.origin;
 const SCOPES = 'playlist-modify-public playlist-modify-private';
-let tracks = [], spotifyToken = null, spotifyUserId = null;
+
+let tracks = [];
+let spotifyToken = null;
+let spotifyUserId = null;
 
 async function sha256(plain) {
   const enc = new TextEncoder().encode(plain);
   return crypto.subtle.digest('SHA-256', enc);
 }
+
 function base64urlencode(a) {
-  return btoa(String.fromCharCode(...new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  return btoa(String.fromCharCode(...new Uint8Array(a)))
+    .replace(/\+/g,'-')
+    .replace(/\//g,'_')
+    .replace(/=+$/,'');
 }
+
 async function generatePKCE() {
   const verifier = base64urlencode(crypto.getRandomValues(new Uint8Array(32)));
   const challenge = base64urlencode(await sha256(verifier));
   return { verifier, challenge };
-}
-
-function loadConfig() {
-  const tok = localStorage.getItem('spotify_token');
-  const exp = localStorage.getItem('spotify_token_exp');
-  if (tok && exp && Date.now() < parseInt(exp)) {
-    spotifyToken = tok; spotifyUserId = localStorage.getItem('spotify_user_id') || null; setConnected(true);
-  }
 }
 
 function setConnected(yes) {
@@ -144,145 +163,379 @@ function setConnected(yes) {
   document.getElementById('auth-text').textContent = yes ? 'Connecté à Spotify' : 'Non connecté';
 }
 
+function loadConfig() {
+  const tok = localStorage.getItem('spotify_token');
+  const exp = localStorage.getItem('spotify_token_exp');
+  const userId = localStorage.getItem('spotify_user_id');
+
+  if (tok && exp && Date.now() < parseInt(exp, 10)) {
+    spotifyToken = tok;
+    spotifyUserId = userId || null;
+    setConnected(true);
+  } else {
+    setConnected(false);
+  }
+}
+
+function disconnectSpotify() {
+  localStorage.removeItem('spotify_token');
+  localStorage.removeItem('spotify_token_exp');
+  localStorage.removeItem('spotify_user_id');
+  sessionStorage.removeItem('pkce_verifier');
+  sessionStorage.removeItem('spotify_oauth_state');
+  spotifyToken = null;
+  spotifyUserId = null;
+  setConnected(false);
+  toast('Déconnecté de Spotify', 'success');
+}
+
 async function connectSpotify() {
   const { verifier, challenge } = await generatePKCE();
-  const state = verifier;
+  const state = crypto.randomUUID();
+
+  sessionStorage.setItem('pkce_verifier', verifier);
+  sessionStorage.setItem('spotify_oauth_state', state);
+
   const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${CLIENT_ID}&scope=${encodeURIComponent(SCOPES)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${encodeURIComponent(state)}&code_challenge=${challenge}&code_challenge_method=S256`;
+
   window.location.href = url;
 }
 
 async function handleCallback() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
+  const returnedState = params.get('state');
   const error = params.get('error');
-  if (error) { showBanner('Erreur Spotify : ' + error, 'error'); window.history.replaceState({}, document.title, window.location.pathname); return; }
+
+  if (error) {
+    showBanner('Erreur Spotify : ' + error, 'error');
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return;
+  }
+
   if (!code) return;
-  const verifier = params.get('state');
-  if (!verifier) { showBanner('Session expirée, reconnecte-toi.', 'error'); return; }
+
+  const savedState = sessionStorage.getItem('spotify_oauth_state');
+  const verifier = sessionStorage.getItem('pkce_verifier');
+
+  if (!returnedState || returnedState !== savedState || !verifier) {
+    showBanner('Session expirée, reconnecte-toi.', 'error');
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return;
+  }
+
   showBanner('Connexion en cours…', 'success');
+
   try {
     const res = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI, client_id: CLIENT_ID, code_verifier: verifier })
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI,
+        client_id: CLIENT_ID,
+        code_verifier: verifier
+      })
     });
+
     const data = await res.json();
-    if (data.access_token) {
-      spotifyToken = data.access_token;
-      localStorage.setItem('spotify_token', spotifyToken);
-      localStorage.setItem('spotify_token_exp', Date.now() + data.expires_in * 1000);
-      sessionStorage.removeItem('pkce_verifier');
-      setConnected(true);
-      showBanner('Connecté à Spotify !', 'success');
-      window.history.replaceState({}, document.title, window.location.pathname);
-      await fetchUserId();
-    } else {
-      showBanner('Erreur : ' + (data.error_description || data.error), 'error');
+    console.log('TOKEN RESPONSE', res.status, data);
+
+    if (!res.ok || !data.access_token) {
+      throw new Error(data.error_description || data.error || 'Erreur inconnue lors de la connexion Spotify');
     }
-  } catch(e) { showBanner('Erreur réseau', 'error'); }
+
+    spotifyToken = data.access_token;
+    localStorage.setItem('spotify_token', spotifyToken);
+    localStorage.setItem('spotify_token_exp', String(Date.now() + (data.expires_in * 1000)));
+
+    sessionStorage.removeItem('pkce_verifier');
+    sessionStorage.removeItem('spotify_oauth_state');
+
+    setConnected(true);
+    await fetchUserId();
+
+    showBanner('Connecté à Spotify !', 'success');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } catch (e) {
+    console.error(e);
+    showBanner('Erreur : ' + e.message, 'error');
+  }
 }
 
 function showBanner(msg, type) {
   const b = document.getElementById('banner');
-  b.textContent = msg; b.className = `banner visible ${type}`;
-  if (type === 'success') setTimeout(() => b.classList.remove('visible'), 5000);
+  b.textContent = msg;
+  b.className = `banner visible ${type}`;
+  if (type === 'success') {
+    setTimeout(() => b.classList.remove('visible'), 5000);
+  }
 }
 
 async function fetchUserId() {
+  if (!spotifyToken) return null;
+
   try {
-    const res = await fetch('https://api.spotify.com/v1/me', { headers: { Authorization: `Bearer ${spotifyToken}` } });
+    const res = await fetch('https://api.spotify.com/v1/me', {
+      headers: { Authorization: `Bearer ${spotifyToken}` }
+    });
+
     const data = await res.json();
-    spotifyUserId = data.id; localStorage.setItem('spotify_user_id', spotifyUserId);
-  } catch(e) {}
+    console.log('ME STATUS', res.status, data);
+
+    if (!res.ok || !data.id) {
+      throw new Error(data.error?.message || 'Impossible de récupérer l’utilisateur Spotify');
+    }
+
+    spotifyUserId = data.id;
+    localStorage.setItem('spotify_user_id', spotifyUserId);
+    return spotifyUserId;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
 }
 
 async function generate() {
   const prompt = document.getElementById('prompt').value.trim();
-  if (!prompt) { toast('Décris d\'abord ta playlist', 'error'); return; }
+  if (!prompt) {
+    toast("Décris d'abord ta playlist", 'error');
+    return;
+  }
+
   const nb = document.getElementById('nb-tracks').value;
   setLoading(true, 'Génération en cours…');
+
   try {
     const res = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, nb })
     });
+
     const parsed = await res.json();
-    if (parsed.error) throw new Error(parsed.error);
+    console.log('GENERATE STATUS', res.status, parsed);
+
+    if (!res.ok) {
+      throw new Error(parsed.error || 'Erreur serveur');
+    }
+
+    if (parsed.error) {
+      throw new Error(parsed.error);
+    }
+
     tracks = parsed.tracks || [];
     document.getElementById('playlist-title').value = parsed.playlist_title || 'Ma playlist';
+
     renderPlaylist();
     document.getElementById('playlist-zone').classList.add('visible');
+  } catch (e) {
+    console.error(e);
+    toast('Erreur génération : ' + e.message, 'error');
+  } finally {
     setLoading(false);
-  } catch(e) { setLoading(false); toast('Erreur génération : ' + e.message, 'error'); }
+  }
 }
 
 function renderPlaylist() {
   const list = document.getElementById('track-list');
   list.innerHTML = '';
+
   tracks.forEach((t, i) => {
-    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(t.title + ' ' + t.artist)}`;
+    const title = t.title || 'Titre inconnu';
+    const artist = t.artist || 'Artiste inconnu';
+    const duration = t.duration || '';
+    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
+
     const div = document.createElement('div');
     div.className = 'track';
-    div.innerHTML = `<span class="num">${i+1}</span><div class="info"><a href="${searchUrl}" target="_blank" style="color:var(--text);text-decoration:none"><div class="t">${t.title}</div><div class="a">${t.artist}</div></a></div><span class="dur">${t.duration||''}</span><button class="remove-btn" onclick="removeTrack(${i})">×</button>`;
+    div.innerHTML = `
+      <span class="num">${i + 1}</span>
+      <div class="info">
+        <a href="${searchUrl}" target="_blank" style="color:var(--text);text-decoration:none">
+          <div class="t">${escapeHtml(title)}</div>
+          <div class="a">${escapeHtml(artist)}</div>
+        </a>
+      </div>
+      <span class="dur">${escapeHtml(duration)}</span>
+      <button class="remove-btn" onclick="removeTrack(${i})">×</button>
+    `;
     list.appendChild(div);
   });
-  const total = tracks.reduce((acc, t) => { const p = (t.duration||'0:00').split(':'); return acc + parseInt(p[0])*60 + parseInt(p[1]||0); }, 0);
-  const h = Math.floor(total/3600), m = Math.floor((total%3600)/60);
-  document.getElementById('pl-stats').textContent = `${tracks.length} titres · ~${h>0 ? h+'h'+String(m).padStart(2,'0') : m+' min'}`;
+
+  const total = tracks.reduce((acc, t) => {
+    const raw = t.duration || '0:00';
+    const p = raw.split(':');
+    const minutes = parseInt(p[0], 10) || 0;
+    const seconds = parseInt(p[1], 10) || 0;
+    return acc + (minutes * 60) + seconds;
+  }, 0);
+
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+
+  document.getElementById('pl-stats').textContent =
+    `${tracks.length} titres · ~${h > 0 ? h + 'h' + String(m).padStart(2, '0') : m + ' min'}`;
 }
 
-function removeTrack(i) { tracks.splice(i, 1); renderPlaylist(); }
+function removeTrack(i) {
+  tracks.splice(i, 1);
+  renderPlaylist();
+}
 
 function copyList() {
   const lines = [document.getElementById('playlist-title').value, ''];
-  tracks.forEach((t, i) => lines.push(`${t.title} - ${t.artist}`));
-  navigator.clipboard.writeText(lines.join('\n')).then(() => toast('Copié !', 'success'));
+  tracks.forEach((t) => lines.push(`${t.title || ''} - ${t.artist || ''}`));
+
+  navigator.clipboard.writeText(lines.join('\n'))
+    .then(() => toast('Copié !', 'success'))
+    .catch(() => toast('Impossible de copier', 'error'));
 }
 
 async function createSpotifyPlaylist() {
-  if (!spotifyToken) { toast('Connecte-toi d\'abord à Spotify', 'error'); return; }
-  if (!spotifyUserId) await fetchUserId();
-  const title = document.getElementById('playlist-title').value;
+  if (!spotifyToken) {
+    toast("Connecte-toi d'abord à Spotify", 'error');
+    return;
+  }
+
+  if (!tracks.length) {
+    toast('Aucun morceau à envoyer', 'error');
+    return;
+  }
+
+  if (!spotifyUserId) {
+    await fetchUserId();
+  }
+
+  const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
   setLoading(true, 'Création de la playlist…');
+
   try {
-    const plRes = await fetch(`https://api.spotify.com/v1/me/playlists`, {
+    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${spotifyToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: title, description: 'Généré par Snefrou', public: false })
+      headers: {
+        Authorization: `Bearer ${spotifyToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: title,
+        description: 'Généré par Snefrou',
+        public: false
+      })
     });
+
     const pl = await plRes.json();
+    console.log('PLAYLIST CREATE', plRes.status, pl);
+
+    if (!plRes.ok || !pl.id) {
+      throw new Error(pl.error?.message || 'Erreur création playlist');
+    }
+
     setLoading(true, 'Recherche des titres…');
+
     const uris = [];
+    const notFound = [];
+
     for (const t of tracks) {
-      const q = encodeURIComponent(`track:${t.title} artist:${t.artist}`);
-      const sRes = await fetch(`https://api.spotify.com/v1/search?q=${q}&type=track&limit=1`, { headers: { Authorization: `Bearer ${spotifyToken}` } });
-      const sData = await sRes.json();
-      const uri = sData.tracks?.items?.[0]?.uri;
-      if (uri) uris.push(uri);
-    }
-    if (uris.length > 0) {
-      await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${spotifyToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uris })
+      const trackTitle = (t.title || '').trim();
+      const trackArtist = (t.artist || '').trim();
+
+      if (!trackTitle || !trackArtist) {
+        notFound.push(`${trackTitle || '[sans titre]'} - ${trackArtist || '[sans artiste]'}`);
+        continue;
+      }
+
+      const strictQuery = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
+      let sRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=1`, {
+        headers: { Authorization: `Bearer ${spotifyToken}` }
       });
+
+      let sData = await sRes.json();
+      console.log('SEARCH STRICT', sRes.status, { title: trackTitle, artist: trackArtist }, sData);
+
+      let uri = sData.tracks?.items?.[0]?.uri;
+
+      if (!uri) {
+        const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
+        sRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=5`, {
+          headers: { Authorization: `Bearer ${spotifyToken}` }
+        });
+
+        sData = await sRes.json();
+        console.log('SEARCH LOOSE', sRes.status, { title: trackTitle, artist: trackArtist }, sData);
+
+        uri = sData.tracks?.items?.[0]?.uri;
+      }
+
+      if (uri) {
+        uris.push(uri);
+      } else {
+        notFound.push(`${trackTitle} - ${trackArtist}`);
+      }
     }
+
+    console.log('FINAL URIS', uris);
+    console.log('NOT FOUND', notFound);
+
+    if (uris.length === 0) {
+      throw new Error('Aucun morceau trouvé sur Spotify');
+    }
+
+    setLoading(true, 'Ajout des morceaux…');
+
+    const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/items`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${spotifyToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ uris })
+    });
+
+    const addData = await addRes.json();
+    console.log('ADD TRACKS', addRes.status, addData);
+
+    if (!addRes.ok) {
+      throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+    }
+
+    let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
+    if (notFound.length > 0) {
+      msg += ` ${notFound.length} introuvable(s).`;
+    }
+
+    toast(msg, 'success');
+  } catch (e) {
+    console.error(e);
+    toast('Erreur Spotify : ' + e.message, 'error');
+  } finally {
     setLoading(false);
-    toast(`Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`, 'success');
-  } catch(e) { setLoading(false); toast('Erreur Spotify', 'error'); }
+  }
 }
 
 function setLoading(on, msg) {
   document.getElementById('loading').classList.toggle('visible', on);
-  if (msg) document.getElementById('loading-text').textContent = msg;
+  if (msg) {
+    document.getElementById('loading-text').textContent = msg;
+  }
   document.getElementById('gen-btn').disabled = on;
 }
 
 function toast(msg, type) {
   const el = document.getElementById('toast');
-  el.textContent = msg; el.className = `toast ${type||''} show`;
+  el.textContent = msg;
+  el.className = `toast ${type || ''} show`;
   setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
 loadConfig();
