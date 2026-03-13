@@ -634,7 +634,7 @@ async function spotifyFetch(url, options = {}) {
 
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10);
-    throw new Error(`Spotify limite les requêtes. Réessaie dans ${retryAfter} seconde(s).`);
+    throw new Error(`SPOTIFY_RATE_LIMIT:${retryAfter}`);
   }
 
   return { res, raw, data };
@@ -767,6 +767,28 @@ function copyList() {
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
+function buildSpotifyQuery(track) {
+  const title = String(track?.title || '').trim();
+  const artist = String(track?.artist || '').trim();
+  return `track:${title} artist:${artist}`;
+}
+
+async function findTrackUri(track) {
+  const query = buildSpotifyQuery(track);
+
+  const { res, raw, data } = await spotifyFetch(
+    `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`
+  );
+
+  console.log('SPOTIFY SEARCH', res.status, query, data || raw);
+
+  if (!res.ok) {
+    throw new Error(getErrorMessage(raw, data, 'Erreur recherche Spotify'));
+  }
+
+  return data?.tracks?.items?.[0]?.uri || null;
+}
+
 async function createSpotifyPlaylist() {
   if (!spotifyToken) {
     toast("Connecte-toi d'abord à Spotify", 'error');
@@ -808,41 +830,36 @@ async function createSpotifyPlaylist() {
     }
 
     const playlistId = createResp.data.id;
+    const uris = [];
+    let stoppedByRateLimit = false;
 
-    setLoading(true, 'Résolution des titres Spotify…');
+    setLoading(true, 'Recherche des morceaux…');
 
-    const resolveRes = await fetch('/api/resolve-tracks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        spotifyToken,
-        tracks
-      })
-    });
-
-    const resolveParsed = await parseResponseSafely(resolveRes);
-    console.log('RESOLVE TRACKS', resolveRes.status, resolveParsed.data || resolveParsed.raw);
-
-    if (!resolveRes.ok) {
-      throw new Error(getErrorMessage(resolveParsed.raw, resolveParsed.data, 'Erreur résolution Spotify'));
+    for (const track of tracks) {
+      try {
+        const uri = await findTrackUri(track);
+        if (uri) {
+          uris.push(uri);
+        }
+      } catch (e) {
+        if (typeof e.message === 'string' && e.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
+          stoppedByRateLimit = true;
+          break;
+        }
+        console.error('TRACK SEARCH ERROR', track, e);
+      }
     }
 
-    const uris = Array.isArray(resolveParsed.data?.uris)
-      ? resolveParsed.data.uris
-      : [];
+    const uniqueUris = [...new Set(uris)];
 
-    const notFound = Array.isArray(resolveParsed.data?.notFound)
-      ? resolveParsed.data.notFound
-      : [];
-
-    if (uris.length === 0) {
-      throw new Error('Aucun morceau exploitable trouvé sur Spotify');
+    if (uniqueUris.length === 0) {
+      throw new Error('Aucun morceau trouvé sur Spotify');
     }
 
     setLoading(true, 'Ajout des morceaux…');
 
-    for (let i = 0; i < uris.length; i += 100) {
-      const batch = uris.slice(i, i + 100);
+    for (let i = 0; i < uniqueUris.length; i += 100) {
+      const batch = uniqueUris.slice(i, i + 100);
 
       const addResp = await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
         method: 'POST',
@@ -857,15 +874,20 @@ async function createSpotifyPlaylist() {
       }
     }
 
-    let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
-    if (notFound.length > 0) {
-      msg += ` ${notFound.length} introuvable(s).`;
+    let msg = `Playlist créée ! ${uniqueUris.length}/${tracks.length} titres ajoutés.`;
+    if (stoppedByRateLimit) {
+      msg += ' Spotify a limité les requêtes avant la fin.';
     }
 
     toast(msg, 'success');
   } catch (e) {
     console.error(e);
-    toast('Erreur Spotify : ' + e.message, 'error');
+
+    if (typeof e.message === 'string' && e.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
+      toast('Spotify limite les requêtes. Réessaie dans quelques secondes.', 'error');
+    } else {
+      toast('Erreur Spotify : ' + e.message, 'error');
+    }
   } finally {
     setLoading(false);
   }
