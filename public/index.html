@@ -12,67 +12,377 @@
     --text: #f0ede8; --text-muted: #6b6560; --text-secondary: #9d9890;
     --accent: #c8b89a; --green: #1DB954; --green-dim: rgba(29,185,84,0.12); --red: #e05a5a;
   }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; font-size: 13px; min-height: 100vh; line-height: 1.6; }
-  .app { display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
-  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 2rem; }
-  .logo { font-family: 'DM Serif Display', serif; font-size: 28px; color: var(--accent); letter-spacing: -0.5px; }
-  .logo span { font-style: italic; color: var(--text-muted); font-size: 12px; font-family: 'DM Mono', monospace; display: block; margin-top: 2px; font-weight: 300; }
-  .section-label { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.75rem; }
-  .auth-status { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--text-secondary); }
-  .auth-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
-  .auth-status.connected .dot { background: var(--green); }
-  .auth-status.connected { color: var(--text); border-color: rgba(29,185,84,0.2); }
-  .btn { width: 100%; padding: 11px 16px; border-radius: 6px; font-family: 'DM Mono', monospace; font-size: 12px; cursor: pointer; transition: all 0.15s; border: 1px solid var(--border); background: transparent; color: var(--text-secondary); text-align: left; }
-  .btn:hover { border-color: var(--border-hover); color: var(--text); background: var(--surface2); }
-  .btn.primary { background: var(--accent); color: #1a1600; border-color: var(--accent); font-weight: 500; text-align: center; }
-  .btn.primary:hover { background: #ddd0b8; }
-  .btn.spotify { background: var(--green-dim); border-color: rgba(29,185,84,0.3); color: var(--green); text-align: center; }
-  .btn.spotify:hover { background: rgba(29,185,84,0.2); }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .main { padding: 2rem 2.5rem; display: flex; flex-direction: column; gap: 2rem; }
-  .prompt-zone textarea { width: 100%; min-height: 100px; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Serif Display', serif; font-size: 20px; line-height: 1.5; resize: none; outline: none; }
-  .prompt-zone textarea::placeholder { color: var(--text-muted); font-style: italic; }
-  .generate-row { display: flex; gap: 12px; align-items: center; }
-  .generate-row .btn { width: auto; padding: 10px 24px; }
-  .count-select { padding: 9px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px; outline: none; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+
+  .app {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    min-height: 100vh;
+  }
+
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+  }
+
+  .logo span {
+    font-style: italic;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: 'DM Mono', monospace;
+    display: block;
+    margin-top: 2px;
+    font-weight: 300;
+  }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .auth-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .auth-status .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .auth-status.connected .dot {
+    background: var(--green);
+  }
+
+  .auth-status.connected {
+    color: var(--text);
+    border-color: rgba(29,185,84,0.2);
+  }
+
+  .btn {
+    width: 100%;
+    padding: 11px 16px;
+    border-radius: 6px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    text-align: left;
+  }
+
+  .btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+    background: var(--surface2);
+  }
+
+  .btn.primary {
+    background: var(--accent);
+    color: #1a1600;
+    border-color: var(--accent);
+    font-weight: 500;
+    text-align: center;
+  }
+
+  .btn.primary:hover {
+    background: #ddd0b8;
+  }
+
+  .btn.spotify {
+    background: var(--green-dim);
+    border-color: rgba(29,185,84,0.3);
+    color: var(--green);
+    text-align: center;
+  }
+
+  .btn.spotify:hover {
+    background: rgba(29,185,84,0.2);
+  }
+
+  .btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .main {
+    padding: 2rem 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .prompt-zone textarea {
+    width: 100%;
+    min-height: 100px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+  }
+
+  .prompt-zone textarea::placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .generate-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .generate-row .btn {
+    width: auto;
+    padding: 10px 24px;
+  }
+
+  .count-select {
+    padding: 9px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    outline: none;
+  }
+
   .playlist-zone { display: none; }
   .playlist-zone.visible { display: block; }
-  .playlist-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap; }
-  .playlist-title-input { font-family: 'DM Serif Display', serif; font-size: 26px; color: var(--text); background: transparent; border: none; outline: none; border-bottom: 1px solid transparent; padding-bottom: 2px; flex: 1; min-width: 200px; }
-  .pl-actions { display: flex; gap: 8px; flex-shrink: 0; }
-  .pl-actions .btn { width: auto; padding: 8px 16px; font-size: 11px; }
-  .track-list { display: flex; flex-direction: column; gap: 2px; }
-  .track { display: grid; grid-template-columns: 28px 1fr auto auto; align-items: center; gap: 16px; padding: 10px 14px; border-radius: 6px; border: 1px solid transparent; transition: all 0.15s; }
-  .track:hover { background: var(--surface); border-color: var(--border); }
-  .track .num { font-size: 11px; color: var(--text-muted); text-align: right; }
-  .track .info .t { font-size: 13px; color: var(--text); }
-  .track .info .a { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
-  .track .dur { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
-  .track .remove-btn { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 16px; padding: 0 4px; opacity: 0; transition: opacity 0.15s, color 0.15s; line-height: 1; }
+
+  .playlist-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .playlist-title-input {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    outline: none;
+    border-bottom: 1px solid transparent;
+    padding-bottom: 2px;
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .pl-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .pl-actions .btn {
+    width: auto;
+    padding: 8px 16px;
+    font-size: 11px;
+  }
+
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .track {
+    display: grid;
+    grid-template-columns: 28px 1fr auto auto;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+  }
+
+  .track:hover {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+
+  .track .num {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+  }
+
+  .track .info .t {
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .track .info .a {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+
+  .track .dur {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .track .remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 16px;
+    padding: 0 4px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
   .track:hover .remove-btn { opacity: 1; }
   .track .remove-btn:hover { color: var(--red); }
-  .playlist-footer { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
-  .pl-stats { font-size: 11px; color: var(--text-muted); }
-  .loading { display: none; align-items: center; gap: 12px; padding: 1rem 0; }
+
+  .playlist-footer {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .pl-stats {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .loading {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 1rem 0;
+  }
+
   .loading.visible { display: flex; }
-  .spinner { width: 16px; height: 16px; border: 1.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+
   @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-text { font-size: 12px; color: var(--text-muted); }
-  .banner { display: none; padding: 12px 16px; border-radius: 8px; font-size: 12px; border: 1px solid var(--border); }
+
+  .loading-text {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .banner {
+    display: none;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    border: 1px solid var(--border);
+  }
+
   .banner.visible { display: block; }
   .banner.success { border-color: rgba(29,185,84,0.3); color: var(--green); }
   .banner.error { border-color: rgba(224,90,90,0.3); color: var(--red); }
-  .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; font-size: 12px; color: var(--text); opacity: 0; transform: translateY(8px); transition: all 0.25s; z-index: 200; pointer-events: none; max-width: 340px; }
-  .toast.show { opacity: 1; transform: translateY(0); }
+
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 12px;
+    color: var(--text);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.25s;
+    z-index: 200;
+    pointer-events: none;
+    max-width: 340px;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
   .toast.success { border-color: rgba(29,185,84,0.4); color: var(--green); }
   .toast.error { border-color: rgba(224,90,90,0.4); color: var(--red); }
+
+  @media (max-width: 900px) {
+    .app {
+      grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .main {
+      padding: 1.5rem;
+    }
+  }
 </style>
 </head>
 <body>
 <div class="app">
   <div class="sidebar">
-    <div><div class="logo">Snefrou<span>playlist generator</span></div></div>
+    <div>
+      <div class="logo">Snefrou<span>playlist generator</span></div>
+    </div>
 
     <div>
       <div class="section-label">Spotify</div>
@@ -86,7 +396,9 @@
 
     <div style="margin-top:auto">
       <div class="section-label">Statut</div>
-      <div style="font-size:11px;color:var(--text-muted);line-height:1.8">Clé API gérée<br>côté serveur</div>
+      <div style="font-size:11px;color:var(--text-muted);line-height:1.8">
+        Clé API gérée<br>côté serveur
+      </div>
     </div>
   </div>
 
@@ -122,6 +434,7 @@
       </div>
 
       <div class="track-list" id="track-list"></div>
+
       <div class="playlist-footer">
         <span class="pl-stats" id="pl-stats"></span>
       </div>
@@ -145,15 +458,16 @@ async function sha256(plain) {
   return crypto.subtle.digest('SHA-256', enc);
 }
 
-function base64urlencode(a) {
-  return btoa(String.fromCharCode(...new Uint8Array(a)))
-    .replace(/\+/g,'-')
-    .replace(/\//g,'_')
-    .replace(/=+$/,'');
+function base64urlencode(input) {
+  const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : input;
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/,'');
 }
 
 async function generatePKCE() {
-  const verifier = base64urlencode(crypto.getRandomValues(new Uint8Array(32)));
+  const verifierBytes = crypto.getRandomValues(new Uint8Array(32));
+  const verifier = base64urlencode(verifierBytes);
   const challenge = base64urlencode(await sha256(verifier));
   return { verifier, challenge };
 }
@@ -173,11 +487,11 @@ function loadConfig() {
     spotifyUserId = userId || null;
     setConnected(true);
   } else {
-    setConnected(false);
+    disconnectSpotify(false);
   }
 }
 
-function disconnectSpotify() {
+function disconnectSpotify(showToast = true) {
   localStorage.removeItem('spotify_token');
   localStorage.removeItem('spotify_token_exp');
   localStorage.removeItem('spotify_user_id');
@@ -186,19 +500,70 @@ function disconnectSpotify() {
   spotifyToken = null;
   spotifyUserId = null;
   setConnected(false);
-  toast('Déconnecté de Spotify', 'success');
+  if (showToast) toast('Déconnecté de Spotify', 'success');
 }
 
 async function connectSpotify() {
-  const { verifier, challenge } = await generatePKCE();
-  const state = crypto.randomUUID();
+  try {
+    const { verifier, challenge } = await generatePKCE();
+    const state = crypto.randomUUID();
 
-  sessionStorage.setItem('pkce_verifier', verifier);
-  sessionStorage.setItem('spotify_oauth_state', state);
+    sessionStorage.setItem('pkce_verifier', verifier);
+    sessionStorage.setItem('spotify_oauth_state', state);
 
-  const url = `https://accounts.spotify.com/authorize?response_type=code&client_id=${CLIENT_ID}&scope=${encodeURIComponent(SCOPES)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${encodeURIComponent(state)}&code_challenge=${challenge}&code_challenge_method=S256`;
+    const url =
+      `https://accounts.spotify.com/authorize` +
+      `?response_type=code` +
+      `&client_id=${encodeURIComponent(CLIENT_ID)}` +
+      `&scope=${encodeURIComponent(SCOPES)}` +
+      `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+      `&state=${encodeURIComponent(state)}` +
+      `&code_challenge=${encodeURIComponent(challenge)}` +
+      `&code_challenge_method=S256`;
 
-  window.location.href = url;
+    window.location.href = url;
+  } catch (e) {
+    console.error(e);
+    toast('Impossible de lancer la connexion Spotify', 'error');
+  }
+}
+
+async function parseResponseSafely(res) {
+  const raw = await res.text();
+  let data = null;
+
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch {
+    data = null;
+  }
+
+  return { raw, data };
+}
+
+function getErrorMessage(res, raw, data, fallback) {
+  return (
+    data?.error_description ||
+    data?.error?.message ||
+    data?.error ||
+    data?.message ||
+    raw ||
+    fallback
+  );
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function normalize(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 async function handleCallback() {
@@ -239,11 +604,11 @@ async function handleCallback() {
       })
     });
 
-    const data = await res.json();
-    console.log('TOKEN RESPONSE', res.status, data);
+    const { raw, data } = await parseResponseSafely(res);
+    console.log('TOKEN RESPONSE', res.status, data || raw);
 
-    if (!res.ok || !data.access_token) {
-      throw new Error(data.error_description || data.error || 'Erreur inconnue lors de la connexion Spotify');
+    if (!res.ok || !data?.access_token) {
+      throw new Error(getErrorMessage(res, raw, data, 'Erreur inconnue lors de la connexion Spotify'));
     }
 
     spotifyToken = data.access_token;
@@ -273,19 +638,37 @@ function showBanner(msg, type) {
   }
 }
 
+async function spotifyFetch(url, options = {}) {
+  const headers = {
+    ...(options.headers || {}),
+    Authorization: `Bearer ${spotifyToken}`
+  };
+
+  const res = await fetch(url, { ...options, headers });
+  const { raw, data } = await parseResponseSafely(res);
+
+  if (res.status === 401) {
+    disconnectSpotify(false);
+    throw new Error('Session Spotify expirée. Reconnecte-toi.');
+  }
+
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10);
+    throw new Error(`Spotify limite les requêtes. Réessaie dans ${retryAfter} seconde(s).`);
+  }
+
+  return { res, raw, data };
+}
+
 async function fetchUserId() {
   if (!spotifyToken) return null;
 
   try {
-    const res = await fetch('https://api.spotify.com/v1/me', {
-      headers: { Authorization: `Bearer ${spotifyToken}` }
-    });
+    const { res, raw, data } = await spotifyFetch('https://api.spotify.com/v1/me');
+    console.log('ME STATUS', res.status, data || raw);
 
-    const data = await res.json();
-    console.log('ME STATUS', res.status, data);
-
-    if (!res.ok || !data.id) {
-      throw new Error(data.error?.message || 'Impossible de récupérer l’utilisateur Spotify');
+    if (!res.ok || !data?.id) {
+      throw new Error(getErrorMessage(res, raw, data, 'Impossible de récupérer l’utilisateur Spotify'));
     }
 
     spotifyUserId = data.id;
@@ -314,22 +697,26 @@ async function generate() {
       body: JSON.stringify({ prompt, nb })
     });
 
-    const parsed = await res.json();
-    console.log('GENERATE STATUS', res.status, parsed);
+    const { raw, data } = await parseResponseSafely(res);
+    console.log('GENERATE STATUS', res.status, data || raw);
 
     if (!res.ok) {
-      throw new Error(parsed.error || 'Erreur serveur');
+      if (res.status === 429) {
+        throw new Error('Trop de requêtes côté serveur. Réessaie dans un instant.');
+      }
+      throw new Error(getErrorMessage(res, raw, data, 'Erreur serveur'));
     }
 
-    if (parsed.error) {
-      throw new Error(parsed.error);
+    if (!data || !Array.isArray(data.tracks)) {
+      throw new Error('Réponse invalide du serveur');
     }
 
-    tracks = parsed.tracks || [];
-    document.getElementById('playlist-title').value = parsed.playlist_title || 'Ma playlist';
+    tracks = data.tracks || [];
+    document.getElementById('playlist-title').value = data.playlist_title || 'Ma playlist';
 
     renderPlaylist();
     document.getElementById('playlist-zone').classList.add('visible');
+    toast('Playlist générée', 'success');
   } catch (e) {
     console.error(e);
     toast('Erreur génération : ' + e.message, 'error');
@@ -353,7 +740,7 @@ function renderPlaylist() {
     div.innerHTML = `
       <span class="num">${i + 1}</span>
       <div class="info">
-        <a href="${searchUrl}" target="_blank" style="color:var(--text);text-decoration:none">
+        <a href="${searchUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
           <div class="t">${escapeHtml(title)}</div>
           <div class="a">${escapeHtml(artist)}</div>
         </a>
@@ -393,6 +780,45 @@ function copyList() {
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
+async function searchBestSpotifyTrack(trackTitle, trackArtist, attempt = 0) {
+  const strictQuery = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
+  let { res, raw, data } = await spotifyFetch(
+    `https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=5`
+  );
+
+  console.log('SEARCH STRICT', res.status, { trackTitle, trackArtist }, data || raw);
+
+  if (res.ok && data?.tracks?.items?.length) {
+    const strictMatch = data.tracks.items.find(item =>
+      normalize(item.name) === normalize(trackTitle) &&
+      item.artists?.some(a => normalize(a.name) === normalize(trackArtist))
+    );
+    if (strictMatch) return strictMatch.uri;
+    return data.tracks.items[0].uri;
+  }
+
+  if (attempt > 0) {
+    await sleep(300);
+  }
+
+  const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
+  ({ res, raw, data } = await spotifyFetch(
+    `https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`
+  ));
+
+  console.log('SEARCH LOOSE', res.status, { trackTitle, trackArtist }, data || raw);
+
+  if (res.ok && data?.tracks?.items?.length) {
+    const artistMatch = data.tracks.items.find(item =>
+      item.artists?.some(a => normalize(a.name).includes(normalize(trackArtist)))
+    );
+    if (artistMatch) return artistMatch.uri;
+    return data.tracks.items[0].uri;
+  }
+
+  return null;
+}
+
 async function createSpotifyPlaylist() {
   if (!spotifyToken) {
     toast("Connecte-toi d'abord à Spotify", 'error');
@@ -408,16 +834,18 @@ async function createSpotifyPlaylist() {
     await fetchUserId();
   }
 
+  if (!spotifyUserId) {
+    toast("Impossible d'identifier ton compte Spotify", 'error');
+    return;
+  }
+
   const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
   setLoading(true, 'Création de la playlist…');
 
   try {
-    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
+    const createResp = await spotifyFetch('https://api.spotify.com/v1/me/playlists', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: title,
         description: 'Généré par Snefrou',
@@ -425,13 +853,13 @@ async function createSpotifyPlaylist() {
       })
     });
 
-    const pl = await plRes.json();
-    console.log('PLAYLIST CREATE', plRes.status, pl);
+    console.log('PLAYLIST CREATE', createResp.res.status, createResp.data || createResp.raw);
 
-    if (!plRes.ok || !pl.id) {
-      throw new Error(pl.error?.message || 'Erreur création playlist');
+    if (!createResp.res.ok || !createResp.data?.id) {
+      throw new Error(getErrorMessage(createResp.res, createResp.raw, createResp.data, 'Erreur création playlist'));
     }
 
+    const playlistId = createResp.data.id;
     setLoading(true, 'Recherche des titres…');
 
     const uris = [];
@@ -446,31 +874,18 @@ async function createSpotifyPlaylist() {
         continue;
       }
 
-      const strictQuery = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
-      let sRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=1`, {
-        headers: { Authorization: `Bearer ${spotifyToken}` }
-      });
+      try {
+        const uri = await searchBestSpotifyTrack(trackTitle, trackArtist);
 
-      let sData = await sRes.json();
-      console.log('SEARCH STRICT', sRes.status, { title: trackTitle, artist: trackArtist }, sData);
+        if (uri) {
+          uris.push(uri);
+        } else {
+          notFound.push(`${trackTitle} - ${trackArtist}`);
+        }
 
-      let uri = sData.tracks?.items?.[0]?.uri;
-
-      if (!uri) {
-        const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
-        sRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=5`, {
-          headers: { Authorization: `Bearer ${spotifyToken}` }
-        });
-
-        sData = await sRes.json();
-        console.log('SEARCH LOOSE', sRes.status, { title: trackTitle, artist: trackArtist }, sData);
-
-        uri = sData.tracks?.items?.[0]?.uri;
-      }
-
-      if (uri) {
-        uris.push(uri);
-      } else {
+        await sleep(350);
+      } catch (e) {
+        console.error('SEARCH ERROR', trackTitle, trackArtist, e);
         notFound.push(`${trackTitle} - ${trackArtist}`);
       }
     }
@@ -484,20 +899,20 @@ async function createSpotifyPlaylist() {
 
     setLoading(true, 'Ajout des morceaux…');
 
-    const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/items`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ uris })
-    });
+    for (let i = 0; i < uris.length; i += 100) {
+      const batch = uris.slice(i, i + 100);
 
-    const addData = await addRes.json();
-    console.log('ADD TRACKS', addRes.status, addData);
+      const addResp = await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uris: batch })
+      });
 
-    if (!addRes.ok) {
-      throw new Error(addData.error?.message || 'Erreur ajout morceaux');
+      console.log('ADD TRACKS', addResp.res.status, addResp.data || addResp.raw);
+
+      if (!addResp.res.ok) {
+        throw new Error(getErrorMessage(addResp.res, addResp.raw, addResp.data, 'Erreur ajout morceaux'));
+      }
     }
 
     let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
