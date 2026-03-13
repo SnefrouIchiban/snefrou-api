@@ -512,11 +512,6 @@ async function createSpotifyPlaylist() {
   if (spotifyBtn) spotifyBtn.disabled = true;
 
   try {
-    if (!tracks.length) {
-      toast('Aucun morceau à envoyer', 'error');
-      return;
-    }
-
     const hasToken = await ensureSpotifyToken();
     if (!hasToken) {
       toast("Connecte-toi d'abord à Spotify", 'error');
@@ -527,17 +522,9 @@ async function createSpotifyPlaylist() {
       await fetchUserId();
     }
 
-    console.log('TRACKS FROM SERVER', tracks);
-    console.log('FIRST TRACK', tracks[0]);
-
+    const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
     const uris = tracks.map(t => t.uri).filter(Boolean);
 
-    if (!uris.length) {
-      toast('Playlist générée, mais aucun morceau n’a pu être validé par Spotify.', 'error');
-      return;
-    }
-
-    const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
     setLoading(true, 'Création de la playlist…');
 
     const plRes = await spotifyFetch('https://api.spotify.com/v1/me/playlists', {
@@ -545,7 +532,9 @@ async function createSpotifyPlaylist() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: title,
-        description: 'Généré par Snefrou',
+        description: uris.length
+          ? 'Généré par Snefrou'
+          : 'Généré par Snefrou — aucun morceau n’a pu être validé automatiquement par Spotify',
         public: false
       })
     });
@@ -554,6 +543,11 @@ async function createSpotifyPlaylist() {
 
     if (!plRes.ok || !pl.id) {
       throw new Error(pl.error?.message || 'Erreur création playlist');
+    }
+
+    if (!uris.length) {
+      toast('Playlist créée sur Spotify, mais vide : aucun morceau n’a pu être validé automatiquement.', 'error');
+      return;
     }
 
     setLoading(true, 'Ajout des morceaux…');
@@ -574,7 +568,7 @@ async function createSpotifyPlaylist() {
       }
     }
 
-    toast(`Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`, 'success');
+    toast(`Playlist créée sur Spotify ! ${uris.length}/${tracks.length} titres ajoutés.`, 'success');
   } catch (e) {
     console.error(e);
     toast('Erreur Spotify : ' + e.message, 'error');
