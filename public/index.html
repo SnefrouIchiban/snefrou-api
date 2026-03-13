@@ -546,29 +546,6 @@ function getErrorMessage(raw, data, fallback) {
   );
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function normalize(str) {
-  return String(str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
-
-function isLikelyAlbumTitle(title) {
-  const bad = [
-    'greatest hits', 'best of', 'collection', 'essential',
-    'anthology', 'complete recordings', 'deluxe edition'
-  ];
-  const t = normalize(title);
-  return bad.some(word => t.includes(word));
-}
-
 async function handleCallback() {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
@@ -641,7 +618,7 @@ function showBanner(msg, type) {
   }
 }
 
-async function spotifyFetch(url, options = {}, attempt = 0) {
+async function spotifyFetch(url, options = {}) {
   const headers = {
     ...(options.headers || {}),
     Authorization: `Bearer ${spotifyToken}`
@@ -657,13 +634,7 @@ async function spotifyFetch(url, options = {}, attempt = 0) {
 
   if (res.status === 429) {
     const retryAfter = parseInt(res.headers.get('Retry-After') || '2', 10);
-
-    if (attempt >= 5) {
-      throw new Error(`Spotify limite les requêtes. Réessaie dans ${retryAfter} seconde(s).`);
-    }
-
-    await sleep((retryAfter + 1) * 1000);
-    return spotifyFetch(url, options, attempt + 1);
+    throw new Error(`Spotify limite les requêtes. Réessaie dans ${retryAfter} seconde(s).`);
   }
 
   return { res, raw, data };
@@ -796,76 +767,6 @@ function copyList() {
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
-function buildSearchQueries(trackTitle, trackArtist) {
-  const cleanTitle = String(trackTitle || '').trim();
-  const cleanArtist = String(trackArtist || '').trim();
-
-  const titleNoParens = cleanTitle.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
-  const titleNoDashSuffix = cleanTitle.split(' - ')[0].trim();
-
-  const queries = [
-    `track:${cleanTitle} artist:${cleanArtist}`,
-    `${cleanTitle} ${cleanArtist}`,
-    `${titleNoParens} ${cleanArtist}`,
-    `${titleNoDashSuffix} ${cleanArtist}`,
-    cleanTitle
-  ];
-
-  return [...new Set(queries.filter(Boolean))];
-}
-
-function scoreSpotifyTrack(item, requestedTitle, requestedArtist) {
-  let score = 0;
-
-  const itemName = normalize(item?.name || '');
-  const reqTitle = normalize(requestedTitle || '');
-  const reqArtist = normalize(requestedArtist || '');
-  const artists = (item?.artists || []).map(a => normalize(a.name));
-
-  if (itemName === reqTitle) score += 100;
-  else if (itemName.includes(reqTitle) || reqTitle.includes(itemName)) score += 60;
-
-  if (artists.some(a => a === reqArtist)) score += 100;
-  else if (artists.some(a => a.includes(reqArtist) || reqArtist.includes(a))) score += 60;
-
-  if (isLikelyAlbumTitle(item?.name || '')) score -= 80;
-
-  return score;
-}
-
-async function searchBestSpotifyTrack(trackTitle, trackArtist) {
-  const queries = buildSearchQueries(trackTitle, trackArtist);
-  let bestItem = null;
-  let bestScore = -Infinity;
-
-  for (let i = 0; i < queries.length; i++) {
-    const q = encodeURIComponent(queries[i]);
-    const { res, raw, data } = await spotifyFetch(
-      `https://api.spotify.com/v1/search?q=${q}&type=track&limit=10`
-    );
-
-    console.log('SEARCH', res.status, { trackTitle, trackArtist, query: queries[i] }, data || raw);
-
-    if (res.ok && data?.tracks?.items?.length) {
-      for (const item of data.tracks.items) {
-        const score = scoreSpotifyTrack(item, trackTitle, trackArtist);
-        if (score > bestScore) {
-          bestScore = score;
-          bestItem = item;
-        }
-      }
-
-      if (bestScore >= 160) {
-        return bestItem.uri;
-      }
-    }
-
-    await sleep(1400);
-  }
-
-  return bestItem?.uri || null;
-}
-
 async function createSpotifyPlaylist() {
   if (!spotifyToken) {
     toast("Connecte-toi d'abord à Spotify", 'error');
@@ -907,49 +808,41 @@ async function createSpotifyPlaylist() {
     }
 
     const playlistId = createResp.data.id;
-    setLoading(true, 'Recherche des titres…');
 
-    const uris = [];
-    const notFound = [];
+    setLoading(true, 'Résolution des titres Spotify…');
 
-    for (const t of tracks) {
-      const trackTitle = (t.title || '').trim();
-      const trackArtist = (t.artist || '').trim();
+    const resolveRes = await fetch('/api/resolve-tracks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        spotifyToken,
+        tracks
+      })
+    });
 
-      if (!trackTitle || !trackArtist) {
-        notFound.push(`${trackTitle || '[sans titre]'} - ${trackArtist || '[sans artiste]'}`);
-        continue;
-      }
+    const resolveParsed = await parseResponseSafely(resolveRes);
+    console.log('RESOLVE TRACKS', resolveRes.status, resolveParsed.data || resolveParsed.raw);
 
-      try {
-        const uri = await searchBestSpotifyTrack(trackTitle, trackArtist);
-
-        if (uri) {
-          uris.push(uri);
-        } else {
-          notFound.push(`${trackTitle} - ${trackArtist}`);
-        }
-
-        await sleep(1800);
-      } catch (e) {
-        console.error('SEARCH ERROR', trackTitle, trackArtist, e);
-        notFound.push(`${trackTitle} - ${trackArtist}`);
-      }
+    if (!resolveRes.ok) {
+      throw new Error(getErrorMessage(resolveParsed.raw, resolveParsed.data, 'Erreur résolution Spotify'));
     }
 
-    const uniqueUris = [...new Set(uris)];
+    const uris = Array.isArray(resolveParsed.data?.uris)
+      ? resolveParsed.data.uris
+      : [];
 
-    console.log('FINAL URIS', uniqueUris);
-    console.log('NOT FOUND', notFound);
+    const notFound = Array.isArray(resolveParsed.data?.notFound)
+      ? resolveParsed.data.notFound
+      : [];
 
-    if (uniqueUris.length === 0) {
+    if (uris.length === 0) {
       throw new Error('Aucun morceau exploitable trouvé sur Spotify');
     }
 
     setLoading(true, 'Ajout des morceaux…');
 
-    for (let i = 0; i < uniqueUris.length; i += 100) {
-      const batch = uniqueUris.slice(i, i + 100);
+    for (let i = 0; i < uris.length; i += 100) {
+      const batch = uris.slice(i, i + 100);
 
       const addResp = await spotifyFetch(`https://api.spotify.com/v1/playlists/${playlistId}/items`, {
         method: 'POST',
@@ -964,7 +857,7 @@ async function createSpotifyPlaylist() {
       }
     }
 
-    let msg = `Playlist créée ! ${uniqueUris.length}/${tracks.length} titres ajoutés.`;
+    let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
     if (notFound.length > 0) {
       msg += ` ${notFound.length} introuvable(s).`;
     }
