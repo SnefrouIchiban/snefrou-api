@@ -1,36 +1,38 @@
-let lastCall = 0;
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  const now = Date.now();
-  if (now - lastCall < 3000) {
-    return res.status(429).json({ error: 'Too many requests — slow down' });
-  }
-  lastCall = now;
-
-  const { prompt, nb, constraints = [] } = req.body || {};
+  const { prompt, nb } = req.body || {};
 
   if (!prompt) {
     return res.status(400).json({ error: 'Missing prompt' });
   }
 
-  const wantedCount = Number(nb) || 15;
-  const generationCount = wantedCount + 5;
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
+  }
 
-  const systemPrompt = `
-Tu es un curator musical extrêmement fiable, prudent et précis.
+  const wantedCount = Number(nb) || 15;
+
+  const systemPrompt = `Tu es un curator musical extrêmement fiable, prudent et précis.
 
 Ta priorité absolue est l'existence réelle et vérifiable des morceaux.
 
 RÈGLES IMPÉRATIVES :
-- génère EXACTEMENT ${generationCount} titres
+- génère EXACTEMENT ${wantedCount} titres
 - chaque morceau doit exister réellement et être trouvable sur Spotify
 - n'invente jamais de titre
 - n'invente jamais d'artiste
@@ -39,25 +41,19 @@ RÈGLES IMPÉRATIVES :
 - mieux vaut un morceau plus connu mais réel qu'une rareté douteuse
 - les couples titre / artiste doivent être exacts
 - aucun hors-sujet
+- réponds uniquement avec du JSON valide
 
-${constraints.length ? constraints.map(c => `- ${c}`).join('\n') : ''}
+Format exact :
+{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}`;
 
-Tu dois aussi inventer un titre de playlist court et crédible.
-
-Réponds UNIQUEMENT avec un objet JSON valide :
-{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}
-`;
-
-  const userPrompt = `
-Demande utilisateur :
+  const userPrompt = `Demande utilisateur :
 ${prompt}
 
 Je veux avant tout des morceaux réels, exacts et trouvables sur Spotify.
-Si tu hésites, choisis le morceau le plus sûr.
-`;
+Si tu hésites, choisis le morceau le plus sûr.`;
 
-  try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+  async function callAnthropic() {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -66,24 +62,39 @@ Si tu hésites, choisis le morceau le plus sûr.
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        temperature: 0.2,
+        max_tokens: 1200,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }]
       })
     });
 
-    const raw = await anthropicRes.json();
+    const data = await response.json();
+    return { response, data };
+  }
 
-    if (!anthropicRes.ok) {
-      console.error('ANTHROPIC ERROR', raw);
-      return res.status(500).json({
-        error: raw?.error?.message || 'Anthropic request failed',
-        details: raw
+  try {
+    let { response, data } = await callAnthropic();
+
+    // Retry simple une seule fois si Anthropic rate-limit
+    if (response.status === 429) {
+      await sleep(2500);
+      ({ response, data } = await callAnthropic());
+    }
+
+    if (!response.ok) {
+      console.error('ANTHROPIC ERROR', response.status, data);
+
+      const apiMessage =
+        data?.error?.message ||
+        (response.status === 429 ? 'Anthropic rate limit' : 'Anthropic request failed');
+
+      return res.status(response.status === 429 ? 429 : 500).json({
+        error: apiMessage,
+        details: data
       });
     }
 
-    const text = raw.content?.find(b => b.type === 'text')?.text || '';
+    const text = data.content?.find(block => block.type === 'text')?.text || '';
 
     const cleaned = text
       .replace(/```json/g, '')
@@ -96,23 +107,27 @@ Si tu hésites, choisis le morceau le plus sûr.
     } catch (e) {
       console.error('JSON PARSE ERROR', cleaned);
       return res.status(500).json({
-        error: 'Invalid JSON returned by model'
+        error: 'Invalid JSON returned by model',
+        raw: cleaned
       });
     }
 
-    if (!parsed.tracks || !Array.isArray(parsed.tracks)) {
+    if (!parsed.playlist_title || !Array.isArray(parsed.tracks)) {
       return res.status(500).json({
-        error: 'Model returned invalid structure'
+        error: 'Model returned invalid structure',
+        raw: parsed
       });
     }
 
-    parsed.tracks = parsed.tracks.slice(0, generationCount);
+    parsed.tracks = parsed.tracks
+      .filter(t => t && t.title && t.artist)
+      .slice(0, wantedCount);
 
     return res.status(200).json(parsed);
   } catch (err) {
     console.error('SERVER ERROR', err);
     return res.status(500).json({
-      error: err.message
+      error: err.message || 'Server error'
     });
   }
 }
