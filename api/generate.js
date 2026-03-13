@@ -21,35 +21,27 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
   }
 
-  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
-    return res.status(500).json({ error: 'Missing Spotify server credentials' });
-  }
-
   const wantedCount = Number(nb) || 15;
 
   const systemPrompt = `Tu es un curator musical extrêmement fiable, prudent et précis.
 
-Ta priorité absolue est l'existence réelle et vérifiable des morceaux.
+Ta priorité absolue est de proposer de vrais morceaux plausibles, connus ou vérifiables.
 
 RÈGLES IMPÉRATIVES :
-- propose plus que nécessaire pour permettre validation et filtrage
-- vise ${Math.max(wantedCount + 8, wantedCount + 5)} titres
+- génère exactement ${wantedCount} titres
 - n'invente jamais de titre
 - n'invente jamais d'artiste
 - n'invente jamais de couple titre / artiste
-- si tu as le moindre doute sur l'existence exacte d'un morceau, ne le propose pas
-- mieux vaut un morceau connu mais exact qu'une rareté douteuse
-- aucun hors-sujet
+- si tu hésites, choisis le morceau le plus sûr
 - réponds uniquement avec du JSON valide
 
 Format exact :
-{"playlist_title":"...","tracks":[{"title":"...","artist":"..."}]}`;
+{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}`;
 
   const userPrompt = `Demande utilisateur :
 ${prompt}
 
-Je veux avant tout des morceaux réels, exacts et trouvables sur Spotify.
-Si tu hésites, choisis le morceau le plus sûr.`;
+Je veux avant tout des morceaux réels, exacts et crédibles.`;
 
   try {
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -71,7 +63,6 @@ Si tu hésites, choisis le morceau le plus sûr.`;
 
     if (!anthropicRes.ok) {
       console.error('ANTHROPIC ERROR', anthropicBody.text);
-
       return res.status(anthropicRes.status === 429 ? 429 : 500).json({
         error:
           anthropicBody.json?.error?.message ||
@@ -83,9 +74,7 @@ Si tu hésites, choisis le morceau le plus sûr.`;
     const raw = anthropicBody.json;
 
     if (!raw) {
-      return res.status(500).json({
-        error: 'Anthropic returned non-JSON response'
-      });
+      return res.status(500).json({ error: 'Anthropic returned non-JSON response' });
     }
 
     const text = raw.content?.find(block => block.type === 'text')?.text || '';
@@ -103,25 +92,59 @@ Si tu hésites, choisis le morceau le plus sûr.`;
       return res.status(500).json({ error: 'Model returned invalid structure' });
     }
 
-    const spotifyToken = await getSpotifyAccessToken(
-      process.env.SPOTIFY_CLIENT_ID,
-      process.env.SPOTIFY_CLIENT_SECRET
-    );
+    const baseTracks = dedupeTracks(parsed.tracks)
+      .slice(0, wantedCount)
+      .map(t => ({
+        title: t.title,
+        artist: t.artist,
+        duration: t.duration || '',
+        uri: null,
+        spotify_url: null
+      }));
 
-    const deduped = dedupeTracks(parsed.tracks);
-    const validated = [];
-
-    for (const track of deduped) {
-      if (validated.length >= wantedCount) break;
-
-      const match = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
-      if (match) validated.push(match);
+    if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
+      return res.status(200).json({
+        playlist_title: parsed.playlist_title,
+        tracks: baseTracks
+      });
     }
 
-    return res.status(200).json({
-      playlist_title: parsed.playlist_title,
-      tracks: validated.slice(0, wantedCount)
-    });
+    try {
+      const spotifyToken = await getSpotifyAccessToken(
+        process.env.SPOTIFY_CLIENT_ID,
+        process.env.SPOTIFY_CLIENT_SECRET
+      );
+
+      const enriched = [];
+
+      for (const track of baseTracks) {
+        const match = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
+
+        if (match) {
+          enriched.push({
+            title: match.title,
+            artist: match.artist,
+            duration: match.duration || track.duration || '',
+            uri: match.uri || null,
+            spotify_url: match.spotify_url || null
+          });
+        } else {
+          enriched.push(track);
+        }
+      }
+
+      return res.status(200).json({
+        playlist_title: parsed.playlist_title,
+        tracks: enriched
+      });
+    } catch (spotifyErr) {
+      console.error('SPOTIFY ENRICHMENT ERROR', spotifyErr);
+
+      return res.status(200).json({
+        playlist_title: parsed.playlist_title,
+        tracks: baseTracks
+      });
+    }
   } catch (err) {
     console.error('SERVER ERROR', err);
     return res.status(500).json({
@@ -163,19 +186,12 @@ async function getSpotifyAccessToken(clientId, clientSecret) {
   const tokenBody = await readResponseBody(tokenRes);
 
   if (!tokenRes.ok || !tokenBody.json?.access_token) {
-    console.error('SPOTIFY TOKEN ERROR', tokenBody.text);
-
-    const message =
+    throw new Error(
       tokenBody.json?.error_description ||
       tokenBody.json?.error ||
       tokenBody.text ||
-      'Spotify token error';
-
-    if (tokenRes.status === 429) {
-      throw new Error(`Spotify token rate-limited: ${message}`);
-    }
-
-    throw new Error(message);
+      'Spotify token error'
+    );
   }
 
   return tokenBody.json.access_token;
@@ -200,12 +216,13 @@ function dedupeTracks(tracks) {
 
     const title = String(t.title).trim();
     const artist = String(t.artist).trim();
+    const duration = String(t.duration || '').trim();
     const key = normalize(`${title}|||${artist}`);
 
     if (seen.has(key)) continue;
     seen.add(key);
 
-    out.push({ title, artist });
+    out.push({ title, artist, duration });
   }
 
   return out;
@@ -280,7 +297,6 @@ async function resolveSpotifyTrack(token, title, artist) {
   const searchBody = await readResponseBody(searchRes);
 
   if (!searchRes.ok) {
-    console.error('SPOTIFY SEARCH ERROR', title, artist, searchBody.text);
     return null;
   }
 
