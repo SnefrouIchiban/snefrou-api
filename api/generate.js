@@ -116,22 +116,35 @@ Je veux avant tout des morceaux réels, exacts et crédibles.`;
       );
 
       const enriched = [];
+      let spotifyRateLimited = false;
 
       for (const track of baseTracks) {
-        const match = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
-        console.log('SPOTIFY MATCH', track.title, track.artist, !!match);
+        if (spotifyRateLimited) {
+          enriched.push(track);
+          continue;
+        }
 
-        if (match) {
+        const result = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
+
+        if (result.rateLimited) {
+          spotifyRateLimited = true;
+          enriched.push(track);
+          continue;
+        }
+
+        if (result.match) {
           enriched.push({
-            title: match.title,
-            artist: match.artist,
-            duration: match.duration || track.duration || '',
-            uri: match.uri || null,
-            spotify_url: match.spotify_url || null
+            title: result.match.title,
+            artist: result.match.artist,
+            duration: result.match.duration || track.duration || '',
+            uri: result.match.uri || null,
+            spotify_url: result.match.spotify_url || null
           });
         } else {
           enriched.push(track);
         }
+
+        await sleep(350);
       }
 
       return res.status(200).json({
@@ -284,10 +297,10 @@ function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
 }
 
 async function resolveSpotifyTrack(token, title, artist) {
-  const strictQuery = encodeURIComponent(`track:${title} artist:${artist}`);
+  const query = encodeURIComponent(`track:${title} artist:${artist}`);
 
-  let searchRes = await fetch(
-    `https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=5`,
+  const searchRes = await fetch(
+    `https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`,
     {
       headers: {
         Authorization: `Bearer ${token}`
@@ -295,53 +308,37 @@ async function resolveSpotifyTrack(token, title, artist) {
     }
   );
 
-  let searchBody = await readResponseBody(searchRes);
+  const searchBody = await readResponseBody(searchRes);
 
-  if (searchRes.ok) {
-    let items = searchBody.json?.tracks?.items || [];
-    let winner = pickBestSpotifyTrack(items, title, artist);
-
-    if (winner) {
-      return {
-        title: winner.name,
-        artist: winner.artists?.map(a => a.name).join(', ') || artist,
-        duration: msToDuration(winner.duration_ms),
-        uri: winner.uri,
-        spotify_url: winner.external_urls?.spotify || null
-      };
-    }
-  } else {
-    console.error('SPOTIFY SEARCH ERROR STRICT', title, artist, searchRes.status, searchBody.text);
+  if (searchRes.status === 429) {
+    console.error('SPOTIFY SEARCH RATE LIMITED', title, artist, searchBody.text);
+    return { match: null, rateLimited: true };
   }
 
-  const looseQuery = encodeURIComponent(`${title} ${artist}`);
-
-  searchRes = await fetch(
-    `https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }
-  );
-
-  searchBody = await readResponseBody(searchRes);
-
   if (!searchRes.ok) {
-    console.error('SPOTIFY SEARCH ERROR LOOSE', title, artist, searchRes.status, searchBody.text);
-    return null;
+    console.error('SPOTIFY SEARCH ERROR', title, artist, searchRes.status, searchBody.text);
+    return { match: null, rateLimited: false };
   }
 
   const items = searchBody.json?.tracks?.items || [];
   const winner = pickBestSpotifyTrack(items, title, artist);
 
-  if (!winner) return null;
+  if (!winner) {
+    return { match: null, rateLimited: false };
+  }
 
   return {
-    title: winner.name,
-    artist: winner.artists?.map(a => a.name).join(', ') || artist,
-    duration: msToDuration(winner.duration_ms),
-    uri: winner.uri,
-    spotify_url: winner.external_urls?.spotify || null
+    rateLimited: false,
+    match: {
+      title: winner.name,
+      artist: winner.artists?.map(a => a.name).join(', ') || artist,
+      duration: msToDuration(winner.duration_ms),
+      uri: winner.uri,
+      spotify_url: winner.external_urls?.spotify || null
+    }
   };
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
