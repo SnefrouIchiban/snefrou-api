@@ -138,15 +138,7 @@
 <script>
 const CLIENT_ID = 'cbdd9b0320874109a3640fe744b05c85';
 const API_BASE = 'https://snefrou-api.vercel.app';
-
-/*
-  Important :
-  si Spotify refuse encore le redirect URI, remplace cette ligne par l’URL exacte
-  enregistrée dans ton dashboard Spotify, par ex :
-  const REDIRECT_URI = 'https://ton-site.github.io/';
-*/
-const REDIRECT_URI = window.location.origin + window.location.pathname;
-
+const REDIRECT_URI = 'https://snefrou-api.vercel.app';
 const SCOPES = 'playlist-modify-public playlist-modify-private';
 
 let tracks = [];
@@ -159,7 +151,10 @@ async function sha256(plain) {
 }
 
 function base64urlencode(input) {
-  return btoa(String.fromCharCode(...new Uint8Array(input)))
+  if (input instanceof ArrayBuffer) {
+    input = new Uint8Array(input);
+  }
+  return btoa(String.fromCharCode(...input))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/,'');
@@ -187,6 +182,7 @@ function disconnectSpotify(silent = false) {
   localStorage.removeItem('spotify_token_exp');
   localStorage.removeItem('spotify_user_id');
   localStorage.removeItem('spotify_refresh_token');
+  clearOAuthTemp();
   spotifyToken = null;
   spotifyUserId = null;
   setConnected(false);
@@ -297,6 +293,8 @@ async function spotifyFetch(url, options = {}, retry = true) {
 
 async function connectSpotify() {
   try {
+    clearOAuthTemp();
+
     const { verifier, challenge } = await generatePKCE();
     const state = crypto.randomUUID();
 
