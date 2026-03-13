@@ -673,9 +673,14 @@ async function handleCallback() {
 
     const data = await res.json();
 
-    if (!res.ok || !data.access_token) {
-      throw new Error(data.error_description || data.error || 'Erreur inconnue Spotify');
-    }
+    if (!res.ok) {
+  const msg =
+    res.status === 429
+      ? "Trop de requêtes, attends quelques secondes."
+      : parsed?.details?.error?.message || parsed?.error || "Erreur serveur";
+
+  throw new Error(msg);
+}
 
     spotifyToken = data.access_token;
     localStorage.setItem('spotify_token', spotifyToken);
