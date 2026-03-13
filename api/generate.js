@@ -13,6 +13,7 @@ export default async function handler(req, res) {
 
   try {
     const { prompt, nb } = req.body || {};
+    const count = Math.max(5, Math.min(30, parseInt(nb, 10) || 15));
 
     if (!prompt) {
       return res.status(400).json({ error: 'Missing prompt' });
@@ -37,7 +38,7 @@ export default async function handler(req, res) {
 Tu crées des playlists Spotify réellement désirables, pas des listes génériques.
 
 Règles impératives :
-- génère exactement ${nb || 15} titres
+- génère exactement ${count} titres
 - chaque morceau doit être réel, crédible et trouvable sur Spotify
 - évite les choix paresseux, trop évidents ou ultra-mainstream sauf s’ils sont artistiquement indispensables
 - varie les artistes, les époques, les niveaux de notoriété et les textures sonores quand c’est pertinent
@@ -62,7 +63,18 @@ Je veux une playlist avec une vraie identité, de la variété, et des choix pas
       })
     });
 
-    const data = await response.json();
+    const raw = await response.text();
+    let data = null;
+
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return res.status(500).json({
+        error: 'Anthropic returned non-JSON response',
+        raw
+      });
+    }
+
     console.log('ANTHROPIC STATUS =', response.status);
     console.log('ANTHROPIC DATA =', JSON.stringify(data));
 
@@ -84,24 +96,4 @@ Je veux une playlist avec une vraie identité, de la variété, et des choix pas
 
     let parsed;
     try {
-      parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
-    } catch (parseError) {
-      return res.status(500).json({
-        error: 'Invalid JSON returned by Anthropic',
-        raw: text
-      });
-    }
-
-    if (!parsed.playlist_title || !Array.isArray(parsed.tracks)) {
-      return res.status(500).json({
-        error: 'JSON structure invalid',
-        raw: parsed
-      });
-    }
-
-    return res.status(200).json(parsed);
-  } catch (e) {
-    console.error('API /generate ERROR =', e);
-    return res.status(500).json({ error: e.message || 'Internal Server Error' });
-  }
-}
+      parsed = JSON
