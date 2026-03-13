@@ -533,6 +533,13 @@ async function createSpotifyPlaylist() {
       return;
     }
 
+    const uris = tracks.map(t => t.uri).filter(Boolean);
+
+    if (!uris.length) {
+      toast("Impossible de créer la playlist Spotify : aucun morceau n'a d'URI Spotify.", 'error');
+      return;
+    }
+
     const hasToken = await ensureSpotifyToken();
     if (!hasToken) {
       toast("Connecte-toi d'abord à Spotify", 'error');
@@ -543,11 +550,6 @@ async function createSpotifyPlaylist() {
       await fetchUserId();
     }
 
-    console.log('TRACKS FROM SERVER', tracks);
-    console.log('FIRST TRACK', tracks[0]);
-
-    const uris = tracks.map(t => t.uri).filter(Boolean);
-
     const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
     setLoading(true, 'Création de la playlist…');
 
@@ -556,9 +558,7 @@ async function createSpotifyPlaylist() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: title,
-        description: uris.length
-          ? 'Généré par Snefrou'
-          : 'Généré par Snefrou — aucun morceau n’a pu être validé automatiquement par Spotify',
+        description: 'Généré par Snefrou',
         public: false
       })
     });
@@ -567,11 +567,6 @@ async function createSpotifyPlaylist() {
 
     if (!plRes.ok || !pl.id) {
       throw new Error(pl.error?.message || 'Erreur création playlist');
-    }
-
-    if (!uris.length) {
-      toast('Playlist créée sur Spotify, mais vide : aucun morceau n’a pu être validé automatiquement.', 'error');
-      return;
     }
 
     setLoading(true, 'Ajout des morceaux…');
