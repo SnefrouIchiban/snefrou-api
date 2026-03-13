@@ -1,3 +1,5 @@
+// api/generate.js
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -73,7 +75,6 @@ export default async function handler(req, res) {
 
     const rawResponseText = await anthropicResponse.text();
     console.log('ANTHROPIC STATUS =', anthropicResponse.status);
-    console.log('ANTHROPIC RAW =', rawResponseText);
 
     let data;
     try {
@@ -113,28 +114,19 @@ export default async function handler(req, res) {
       });
     }
 
-    if (!parsed || typeof parsed !== 'object') {
-      return res.status(502).json({
-        error: 'Invalid JSON structure',
-        raw: parsed
-      });
-    }
-
     const playlistTitle =
-      typeof parsed.playlist_title === 'string' && parsed.playlist_title.trim()
+      typeof parsed?.playlist_title === 'string' && parsed.playlist_title.trim()
         ? parsed.playlist_title.trim()
         : 'Ma playlist';
 
-    const rawTracks = Array.isArray(parsed.tracks) ? parsed.tracks : [];
+    const rawTracks = Array.isArray(parsed?.tracks) ? parsed.tracks : [];
 
     const cleanedTracks = rawTracks
-      .map(track => {
-        const title = typeof track?.title === 'string' ? track.title.trim() : '';
-        const artist = typeof track?.artist === 'string' ? track.artist.trim() : '';
-        const duration = typeof track?.duration === 'string' ? track.duration.trim() : '';
-
-        return { title, artist, duration };
-      })
+      .map(track => ({
+        title: typeof track?.title === 'string' ? track.title.trim() : '',
+        artist: typeof track?.artist === 'string' ? track.artist.trim() : '',
+        duration: typeof track?.duration === 'string' ? track.duration.trim() : ''
+      }))
       .filter(track => track.title && track.artist)
       .filter(track => !looksLikeAlbum(track.title))
       .slice(0, count);
