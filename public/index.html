@@ -171,8 +171,8 @@ function disconnectSpotify(silent = false) {
   localStorage.removeItem('spotify_token');
   localStorage.removeItem('spotify_token_exp');
   localStorage.removeItem('spotify_user_id');
-  sessionStorage.removeItem('pkce_verifier');
-  sessionStorage.removeItem('spotify_oauth_state');
+  localStorage.removeItem('pkce_verifier');
+  localStorage.removeItem('spotify_oauth_state');
   spotifyToken = null;
   spotifyUserId = null;
   setConnected(false);
@@ -198,8 +198,8 @@ async function connectSpotify() {
     const { verifier, challenge } = await generatePKCE();
     const state = crypto.randomUUID();
 
-    sessionStorage.setItem('pkce_verifier', verifier);
-    sessionStorage.setItem('spotify_oauth_state', state);
+    localStorage.setItem('pkce_verifier', verifier);
+    localStorage.setItem('spotify_oauth_state', state);
 
     const authUrl = new URL('https://accounts.spotify.com/authorize');
     authUrl.searchParams.set('response_type', 'code');
@@ -232,8 +232,8 @@ async function handleCallback() {
 
     if (!code) return;
 
-    const savedState = sessionStorage.getItem('spotify_oauth_state');
-    const verifier = sessionStorage.getItem('pkce_verifier');
+    const savedState = localStorage.getItem('spotify_oauth_state');
+    const verifier = localStorage.getItem('pkce_verifier');
 
     if (!returnedState || returnedState !== savedState || !verifier) {
       showBanner('Session expirée, reconnecte-toi.', 'error');
@@ -263,8 +263,8 @@ async function handleCallback() {
     localStorage.setItem('spotify_token', spotifyToken);
     localStorage.setItem('spotify_token_exp', String(Date.now() + (data.expires_in * 1000)));
 
-    sessionStorage.removeItem('pkce_verifier');
-    sessionStorage.removeItem('spotify_oauth_state');
+    localStorage.removeItem('pkce_verifier');
+    localStorage.removeItem('spotify_oauth_state');
 
     setConnected(true);
     await fetchUserId();
