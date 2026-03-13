@@ -61,8 +61,9 @@ Si tu hésites, choisis le morceau le plus sûr.`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1200,
+        model: 'claude-3-5-haiku-latest',
+        max_tokens: 800,
+        temperature: 0.2,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }]
       })
@@ -75,9 +76,8 @@ Si tu hésites, choisis le morceau le plus sûr.`;
   try {
     let { response, data } = await callAnthropic();
 
-    // Retry simple une seule fois si Anthropic rate-limit
     if (response.status === 429) {
-      await sleep(2500);
+      await sleep(5000);
       ({ response, data } = await callAnthropic());
     }
 
@@ -95,11 +95,7 @@ Si tu hésites, choisis le morceau le plus sûr.`;
     }
 
     const text = data.content?.find(block => block.type === 'text')?.text || '';
-
-    const cleaned = text
-      .replace(/```json/g, '')
-      .replace(/```/g, '')
-      .trim();
+    const cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
     let parsed;
     try {
