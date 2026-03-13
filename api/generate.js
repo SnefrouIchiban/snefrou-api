@@ -103,6 +103,7 @@ Ta mission est de créer une playlist Spotify réellement désirable, crédible 
 Règles impératives :
 - génère exactement ${wantedCount} titres
 - chaque morceau doit être réel, crédible et trouvable sur Spotify
+- donne la priorité absolue à l’exactitude des artistes et des titres
 - ne propose jamais un morceau hors du périmètre stylistique demandé
 - si l'utilisateur demande un genre, une époque, un pays, une scène, une texture, une ambiance ou un type d'orchestration précis, chaque morceau doit appartenir clairement à cet univers
 - si un morceau est douteux, anachronique, trop éloigné, ou stylistiquement incohérent, il doit être exclu
@@ -110,6 +111,8 @@ Règles impératives :
 - évite les doublons d'artistes sauf nécessité absolue
 - cherche de la personnalité, de la cohérence, de la surprise maîtrisée et du goût
 - si l'utilisateur demande un univers pointu, ne le pollue pas avec des titres mainstream ou d'un autre genre
+- n’invente ni artistes ni morceaux
+- si tu n’es pas sûr d’un couple titre / artiste, choisis un autre morceau plus certain
 
 Contraintes supplémentaires :
 ${constraints.length ? constraints.map(c => `- ${c}`).join('\n') : '- aucune contrainte supplémentaire'}
@@ -124,6 +127,7 @@ ${prompt}
 
 Exigence supplémentaire :
 Je veux une playlist avec une identité forte, une vraie cohérence stylistique, et sans hors-sujet.
+Les couples titre / artiste doivent être exacts.
 Si un morceau ne correspond pas clairement à la demande, tu dois l'exclure.`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -191,7 +195,6 @@ Si un morceau ne correspond pas clairement à la demande, tu dois l'exclure.`;
       });
     }
 
-    // Deuxième passe de validation anti-hors-sujet
     const validationPrompt = `Demande initiale :
 ${prompt}
 
@@ -203,7 +206,8 @@ ${JSON.stringify({ playlist_title: parsed.playlist_title, tracks }, null, 2)}
 
 Tâche :
 - vérifie la cohérence stylistique de chaque morceau
-- supprime tout morceau hors-sujet, anachronique, arbitraire, ou trop éloigné de la demande
+- vérifie l’exactitude de chaque couple titre / artiste
+- supprime tout morceau hors-sujet, anachronique, arbitraire, ou dont le couple titre / artiste semble douteux ou inventé
 - remplace les morceaux supprimés par d'autres morceaux plus pertinents afin d'obtenir exactement ${wantedCount} titres
 - conserve un niveau élevé de cohérence et de goût
 - évite les hors-sujet grossiers
