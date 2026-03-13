@@ -119,6 +119,7 @@ Je veux avant tout des morceaux réels, exacts et crédibles.`;
 
       for (const track of baseTracks) {
         const match = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
+        console.log('SPOTIFY MATCH', track.title, track.artist, !!match);
 
         if (match) {
           enriched.push({
@@ -283,10 +284,10 @@ function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
 }
 
 async function resolveSpotifyTrack(token, title, artist) {
-  const query = encodeURIComponent(`track:${title} artist:${artist}`);
+  const strictQuery = encodeURIComponent(`track:${title} artist:${artist}`);
 
-  const searchRes = await fetch(
-    `https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`,
+  let searchRes = await fetch(
+    `https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=5`,
     {
       headers: {
         Authorization: `Bearer ${token}`
@@ -294,9 +295,40 @@ async function resolveSpotifyTrack(token, title, artist) {
     }
   );
 
-  const searchBody = await readResponseBody(searchRes);
+  let searchBody = await readResponseBody(searchRes);
+
+  if (searchRes.ok) {
+    let items = searchBody.json?.tracks?.items || [];
+    let winner = pickBestSpotifyTrack(items, title, artist);
+
+    if (winner) {
+      return {
+        title: winner.name,
+        artist: winner.artists?.map(a => a.name).join(', ') || artist,
+        duration: msToDuration(winner.duration_ms),
+        uri: winner.uri,
+        spotify_url: winner.external_urls?.spotify || null
+      };
+    }
+  } else {
+    console.error('SPOTIFY SEARCH ERROR STRICT', title, artist, searchRes.status, searchBody.text);
+  }
+
+  const looseQuery = encodeURIComponent(`${title} ${artist}`);
+
+  searchRes = await fetch(
+    `https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=10`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    }
+  );
+
+  searchBody = await readResponseBody(searchRes);
 
   if (!searchRes.ok) {
+    console.error('SPOTIFY SEARCH ERROR LOOSE', title, artist, searchRes.status, searchBody.text);
     return null;
   }
 
