@@ -32,7 +32,7 @@ export default async function handler(req, res) {
 Ta priorité absolue est l'existence réelle et vérifiable des morceaux.
 
 RÈGLES IMPÉRATIVES :
-- propose un peu plus que nécessaire pour permettre validation et filtrage
+- propose plus que nécessaire pour permettre validation et filtrage
 - vise ${Math.max(wantedCount + 8, wantedCount + 5)} titres
 - n'invente jamais de titre
 - n'invente jamais d'artiste
@@ -67,13 +67,24 @@ Si tu hésites, choisis le morceau le plus sûr.`;
       })
     });
 
-    const raw = await anthropicRes.json();
+    const anthropicBody = await readResponseBody(anthropicRes);
 
     if (!anthropicRes.ok) {
-      console.error('ANTHROPIC ERROR', raw);
+      console.error('ANTHROPIC ERROR', anthropicBody.text);
+
+      return res.status(anthropicRes.status === 429 ? 429 : 500).json({
+        error:
+          anthropicBody.json?.error?.message ||
+          anthropicBody.text ||
+          'Anthropic request failed'
+      });
+    }
+
+    const raw = anthropicBody.json;
+
+    if (!raw) {
       return res.status(500).json({
-        error: raw?.error?.message || 'Anthropic request failed',
-        details: raw
+        error: 'Anthropic returned non-JSON response'
       });
     }
 
@@ -104,16 +115,7 @@ Si tu hésites, choisis le morceau le plus sûr.`;
       if (validated.length >= wantedCount) break;
 
       const match = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
-      if (match) {
-        validated.push(match);
-      }
-    }
-
-    if (!validated.length) {
-      return res.status(200).json({
-        playlist_title: parsed.playlist_title,
-        tracks: []
-      });
+      if (match) validated.push(match);
     }
 
     return res.status(200).json({
@@ -128,27 +130,55 @@ Si tu hésites, choisis le morceau le plus sûr.`;
   }
 }
 
+async function readResponseBody(response) {
+  const text = await response.text();
+
+  try {
+    return {
+      text,
+      json: JSON.parse(text)
+    };
+  } catch {
+    return {
+      text,
+      json: null
+    };
+  }
+}
+
 async function getSpotifyAccessToken(clientId, clientSecret) {
   const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
-  const res = await fetch('https://accounts.spotify.com/api/token', {
+  const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${basic}`
+      Authorization: `Basic ${basic}`
     },
     body: new URLSearchParams({
       grant_type: 'client_credentials'
     })
   });
 
-  const data = await res.json();
+  const tokenBody = await readResponseBody(tokenRes);
 
-  if (!res.ok || !data.access_token) {
-    throw new Error(data.error_description || data.error || 'Spotify token error');
+  if (!tokenRes.ok || !tokenBody.json?.access_token) {
+    console.error('SPOTIFY TOKEN ERROR', tokenBody.text);
+
+    const message =
+      tokenBody.json?.error_description ||
+      tokenBody.json?.error ||
+      tokenBody.text ||
+      'Spotify token error';
+
+    if (tokenRes.status === 429) {
+      throw new Error(`Spotify token rate-limited: ${message}`);
+    }
+
+    throw new Error(message);
   }
 
-  return data.access_token;
+  return tokenBody.json.access_token;
 }
 
 function normalize(str) {
@@ -167,13 +197,15 @@ function dedupeTracks(tracks) {
 
   for (const t of tracks || []) {
     if (!t || !t.title || !t.artist) continue;
-    const key = normalize(`${t.title}|||${t.artist}`);
+
+    const title = String(t.title).trim();
+    const artist = String(t.artist).trim();
+    const key = normalize(`${title}|||${artist}`);
+
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({
-      title: String(t.title).trim(),
-      artist: String(t.artist).trim()
-    });
+
+    out.push({ title, artist });
   }
 
   return out;
@@ -236,19 +268,23 @@ function pickBestSpotifyTrack(items, wantedTitle, wantedArtist) {
 async function resolveSpotifyTrack(token, title, artist) {
   const query = encodeURIComponent(`track:${title} artist:${artist}`);
 
-  const res = await fetch(`https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`, {
-    headers: {
-      Authorization: `Bearer ${token}`
+  const searchRes = await fetch(
+    `https://api.spotify.com/v1/search?q=${query}&type=track&limit=5`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
     }
-  });
+  );
 
-  const data = await res.json();
+  const searchBody = await readResponseBody(searchRes);
 
-  if (!res.ok) {
+  if (!searchRes.ok) {
+    console.error('SPOTIFY SEARCH ERROR', title, artist, searchBody.text);
     return null;
   }
 
-  const items = data.tracks?.items || [];
+  const items = searchBody.json?.tracks?.items || [];
   const winner = pickBestSpotifyTrack(items, title, artist);
 
   if (!winner) return null;
