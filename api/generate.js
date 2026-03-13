@@ -32,36 +32,48 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
-        system: `Tu es un expert musical qui crée des playlists Spotify précises.
-Génère exactement ${nb || 15} titres.
-Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni backticks, au format :
+        system: `Tu es un curator musical haut de gamme, érudit, subtil et crédible.
+
+Tu crées des playlists Spotify réellement désirables, pas des listes génériques.
+
+Règles impératives :
+- génère exactement ${nb || 15} titres
+- chaque morceau doit être réel, crédible et trouvable sur Spotify
+- évite les choix paresseux, trop évidents ou ultra-mainstream sauf s’ils sont artistiquement indispensables
+- varie les artistes, les époques, les niveaux de notoriété et les textures sonores quand c’est pertinent
+- évite les doublons d’artiste
+- cherche un équilibre entre morceaux immédiatement séduisants, excellents choix moins attendus, et découvertes raffinées
+- crée une playlist cohérente mais pas monotone
+- privilégie le goût, la personnalité, la surprise et la profondeur curatoriale
+- donne l’impression qu’un vrai expert passionné a composé la playlist
+
+Crée aussi un titre de playlist court, élégant et mémorable.
+
+Réponds UNIQUEMENT avec un objet JSON valide, sans markdown ni backticks, au format exact :
 {"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}`,
         messages: [
           {
             role: 'user',
-            content: prompt
+            content: `Demande utilisateur : ${prompt}
+
+Je veux une playlist avec une vraie identité, de la variété, et des choix pas trop prévisibles.`
           }
         ]
       })
     });
 
-    const rawText = await response.text();
-    let data = null;
-
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      data = null;
-    }
+    const data = await response.json();
+    console.log('ANTHROPIC STATUS =', response.status);
+    console.log('ANTHROPIC DATA =', JSON.stringify(data));
 
     if (!response.ok) {
       return res.status(500).json({
-        error: data?.error?.message || rawText || 'Anthropic request failed',
-        details: data || rawText
+        error: 'Anthropic request failed',
+        details: data
       });
     }
 
-    const text = data?.content?.find(block => block.type === 'text')?.text?.trim();
+    const text = data.content?.find(block => block.type === 'text')?.text?.trim();
 
     if (!text) {
       return res.status(500).json({
