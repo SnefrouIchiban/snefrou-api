@@ -67,6 +67,12 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.success { border-color: rgba(29,185,84,0.4); color: var(--green); }
     .toast.error { border-color: rgba(224,90,90,0.4); color: var(--red); }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
+      .main { padding: 1.5rem; }
+    }
   </style>
 </head>
 <body>
@@ -158,6 +164,15 @@ async function generatePKCE() {
   return { verifier, challenge };
 }
 
+async function readResponseSafely(res) {
+  const raw = await res.text();
+  try {
+    return { raw, data: raw ? JSON.parse(raw) : null };
+  } catch {
+    return { raw, data: null };
+  }
+}
+
 function setConnected(yes) {
   document.getElementById('auth-status').classList.toggle('connected', yes);
   document.getElementById('auth-text').textContent = yes ? 'Connecté à Spotify' : 'Non connecté';
@@ -173,6 +188,8 @@ function loadConfig() {
     spotifyUserId = userId || null;
     setConnected(true);
   } else {
+    spotifyToken = null;
+    spotifyUserId = null;
     setConnected(false);
   }
 }
@@ -246,19 +263,22 @@ async function handleCallback() {
       code_verifier: verifier
     });
 
-    console.log('TOKEN BODY =', body.toString());
-
     const res = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body
     });
 
-    const data = await res.json();
-    console.log('TOKEN RESPONSE', res.status, data);
+    const { data, raw } = await readResponseSafely(res);
+    console.log('TOKEN RESPONSE', res.status, data || raw);
 
-    if (!res.ok || !data.access_token) {
-      throw new Error(data.error_description || data.error || 'Erreur inconnue Spotify');
+    if (!res.ok || !data?.access_token) {
+      throw new Error(
+        data?.error_description ||
+        data?.error ||
+        raw ||
+        'Erreur inconnue Spotify'
+      );
     }
 
     spotifyToken = data.access_token;
@@ -296,18 +316,18 @@ async function fetchUserId() {
       headers: { Authorization: `Bearer ${spotifyToken}` }
     });
 
-    const data = await res.json();
-    console.log('ME STATUS', res.status, data);
+    const { data, raw } = await readResponseSafely(res);
+    console.log('ME STATUS', res.status, data || raw);
 
-    if (!res.ok || !data.id) {
-      throw new Error(data.error?.message || 'Impossible de récupérer l’utilisateur Spotify');
+    if (!res.ok || !data?.id) {
+      throw new Error(data?.error?.message || raw || 'Impossible de récupérer l’utilisateur Spotify');
     }
 
     spotifyUserId = data.id;
     localStorage.setItem('spotify_user_id', spotifyUserId);
     return spotifyUserId;
   } catch (e) {
-    console.error(e);
+    console.error('fetchUserId error', e);
     return null;
   }
 }
@@ -329,21 +349,25 @@ async function generate() {
       body: JSON.stringify({ prompt, nb })
     });
 
-    const parsed = await res.json();
-    console.log('GENERATE STATUS', res.status, parsed);
+    const { data, raw } = await readResponseSafely(res);
+    console.log('GENERATE STATUS', res.status, data || raw);
 
     if (!res.ok) {
-      const msg = parsed?.details?.error?.message || parsed?.error || 'Erreur serveur';
+      const msg =
+        data?.details?.error?.message ||
+        data?.error ||
+        raw ||
+        'Erreur serveur';
       throw new Error(msg);
     }
 
-    tracks = parsed.tracks || [];
-    document.getElementById('playlist-title').value = parsed.playlist_title || 'Ma playlist';
+    tracks = Array.isArray(data?.tracks) ? data.tracks : [];
+    document.getElementById('playlist-title').value = data?.playlist_title || 'Ma playlist';
 
     renderPlaylist();
     document.getElementById('playlist-zone').classList.add('visible');
   } catch (e) {
-    console.error(e);
+    console.error('generate error', e);
     toast('Erreur génération : ' + e.message, 'error');
   } finally {
     setLoading(false);
@@ -365,193 +389,9 @@ function renderPlaylist() {
     div.innerHTML = `
       <span class="num">${i + 1}</span>
       <div class="info">
-        <a href="${searchUrl}" target="_blank" style="color:var(--text);text-decoration:none">
+        <a href="${searchUrl}" target="_blank" rel="noopener noreferrer" style="color:var(--text);text-decoration:none">
           <div class="t">${escapeHtml(title)}</div>
           <div class="a">${escapeHtml(artist)}</div>
         </a>
       </div>
-      <span class="dur">${escapeHtml(duration)}</span>
-      <button class="remove-btn" onclick="removeTrack(${i})">×</button>
-    `;
-    list.appendChild(div);
-  });
-
-  const total = tracks.reduce((acc, t) => {
-    const raw = t.duration || '0:00';
-    const p = raw.split(':');
-    const minutes = parseInt(p[0], 10) || 0;
-    const seconds = parseInt(p[1], 10) || 0;
-    return acc + (minutes * 60) + seconds;
-  }, 0);
-
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-
-  document.getElementById('pl-stats').textContent =
-    `${tracks.length} titres · ~${h > 0 ? h + 'h' + String(m).padStart(2, '0') : m + ' min'}`;
-}
-
-function removeTrack(i) {
-  tracks.splice(i, 1);
-  renderPlaylist();
-}
-
-function copyList() {
-  const lines = [document.getElementById('playlist-title').value, ''];
-  tracks.forEach((t) => lines.push(`${t.title || ''} - ${t.artist || ''}`));
-
-  navigator.clipboard.writeText(lines.join('\n'))
-    .then(() => toast('Copié !', 'success'))
-    .catch(() => toast('Impossible de copier', 'error'));
-}
-
-async function createSpotifyPlaylist() {
-  if (!spotifyToken) {
-    toast("Connecte-toi d'abord à Spotify", 'error');
-    return;
-  }
-
-  if (!tracks.length) {
-    toast('Aucun morceau à envoyer', 'error');
-    return;
-  }
-
-  if (!spotifyUserId) {
-    await fetchUserId();
-  }
-
-  const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
-  setLoading(true, 'Création de la playlist…');
-
-  try {
-    const plRes = await fetch('https://api.spotify.com/v1/me/playlists', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: title,
-        description: 'Curated by Octopus Garden',
-        public: false
-      })
-    });
-
-    const pl = await plRes.json();
-    console.log('PLAYLIST CREATE', plRes.status, pl);
-
-    if (!plRes.ok || !pl.id) {
-      throw new Error(pl.error?.message || 'Erreur création playlist');
-    }
-
-    setLoading(true, 'Recherche des titres…');
-
-    const uris = [];
-    const notFound = [];
-
-    for (const t of tracks) {
-      const trackTitle = (t.title || '').trim();
-      const trackArtist = (t.artist || '').trim();
-
-      if (!trackTitle || !trackArtist) {
-        notFound.push(`${trackTitle || '[sans titre]'} - ${trackArtist || '[sans artiste]'}`);
-        continue;
-      }
-
-      const strictQuery = encodeURIComponent(`track:${trackTitle} artist:${trackArtist}`);
-      let sRes = await fetch(`https://api.spotify.com/v1/search?q=${strictQuery}&type=track&limit=1`, {
-        headers: { Authorization: `Bearer ${spotifyToken}` }
-      });
-
-      let sData = await sRes.json();
-      console.log('SEARCH STRICT', sRes.status, { title: trackTitle, artist: trackArtist }, sData);
-
-      let uri = sData.tracks?.items?.[0]?.uri;
-
-      if (!uri) {
-        const looseQuery = encodeURIComponent(`${trackTitle} ${trackArtist}`);
-        sRes = await fetch(`https://api.spotify.com/v1/search?q=${looseQuery}&type=track&limit=5`, {
-          headers: { Authorization: `Bearer ${spotifyToken}` }
-        });
-
-        sData = await sRes.json();
-        console.log('SEARCH LOOSE', sRes.status, { title: trackTitle, artist: trackArtist }, sData);
-
-        uri = sData.tracks?.items?.[0]?.uri;
-      }
-
-      if (uri) {
-        uris.push(uri);
-      } else {
-        notFound.push(`${trackTitle} - ${trackArtist}`);
-      }
-    }
-
-    console.log('FINAL URIS', uris);
-    console.log('NOT FOUND', notFound);
-
-    if (uris.length === 0) {
-      throw new Error('Aucun morceau trouvé sur Spotify');
-    }
-
-    setLoading(true, 'Ajout des morceaux…');
-
-    const addRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/items`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${spotifyToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ uris })
-    });
-
-    const addData = await addRes.json();
-    console.log('ADD TRACKS', addRes.status, addData);
-
-    if (!addRes.ok) {
-      throw new Error(addData.error?.message || 'Erreur ajout morceaux');
-    }
-
-    let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
-    if (notFound.length > 0) {
-      msg += ` ${notFound.length} introuvable(s).`;
-    }
-
-    toast(msg, 'success');
-  } catch (e) {
-    console.error(e);
-    toast('Erreur Spotify : ' + e.message, 'error');
-  } finally {
-    setLoading(false);
-  }
-}
-
-function setLoading(on, msg) {
-  document.getElementById('loading').classList.toggle('visible', on);
-  if (msg) {
-    document.getElementById('loading-text').textContent = msg;
-  }
-  document.getElementById('gen-btn').disabled = on;
-}
-
-function toast(msg, type) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = `toast ${type || ''} show`;
-  setTimeout(() => el.classList.remove('show'), 4000);
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-
-loadConfig();
-handleCallback();
-</script>
-</body>
-</html>
+      <span
