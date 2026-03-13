@@ -115,56 +115,40 @@ Je veux avant tout des morceaux réels, exacts et crédibles.`;
         process.env.SPOTIFY_CLIENT_SECRET
       );
 
-      const enriched = [];
-      let spotifyRateLimited = false;
+     const enriched = [];
+let spotifyRateLimited = false;
 
-      for (const track of baseTracks) {
-        if (spotifyRateLimited) {
-          enriched.push(track);
-          continue;
-        }
-
-        const result = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
-
-        if (result.rateLimited) {
-          spotifyRateLimited = true;
-          enriched.push(track);
-          continue;
-        }
-
-        if (result.match) {
-          enriched.push({
-            title: result.match.title,
-            artist: result.match.artist,
-            duration: result.match.duration || track.duration || '',
-            uri: result.match.uri || null,
-            spotify_url: result.match.spotify_url || null
-          });
-        } else {
-          enriched.push(track);
-        }
-
-        await sleep(350);
-      }
-
-      return res.status(200).json({
-        playlist_title: parsed.playlist_title,
-        tracks: enriched
-      });
-    } catch (spotifyErr) {
-      console.error('SPOTIFY ENRICHMENT ERROR', spotifyErr);
-
-      return res.status(200).json({
-        playlist_title: parsed.playlist_title,
-        tracks: baseTracks
-      });
-    }
-  } catch (err) {
-    console.error('SERVER ERROR', err);
-    return res.status(500).json({
-      error: err.message || 'Server error'
-    });
+for (const track of baseTracks.slice(0, 5)) {
+  if (spotifyRateLimited) {
+    enriched.push(track);
+    continue;
   }
+
+  const result = await resolveSpotifyTrack(spotifyToken, track.title, track.artist);
+
+  if (result.rateLimited) {
+    spotifyRateLimited = true;
+    enriched.push(track);
+    continue;
+  }
+
+  if (result.match) {
+    enriched.push({
+      title: result.match.title,
+      artist: result.match.artist,
+      duration: result.match.duration || track.duration || '',
+      uri: result.match.uri || null,
+      spotify_url: result.match.spotify_url || null
+    });
+  } else {
+    enriched.push(track);
+  }
+
+  await sleep(500);
+}
+
+for (const track of baseTracks.slice(5)) {
+  enriched.push(track);
 }
 
 async function readResponseBody(response) {
