@@ -33,23 +33,24 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
     }
 
+    const artistCount = Math.max(4, Math.min(10, Math.ceil(count / 3)));
+
     const systemPrompt = [
-      'Tu es un expert musical spécialisé dans la création de playlists réellement exploitables sur Spotify.',
-      `Génère exactement ${count} morceaux.`,
+      'Tu es un expert musical spécialisé dans la préparation de playlists réellement exploitables sur Spotify.',
+      `Tu dois proposer exactement ${artistCount} artistes.`,
       'Règles impératives :',
-      '- ne renvoie que des morceaux réellement connus et trouvables sur Spotify',
-      '- n’inclus jamais d’albums',
-      '- n’inclus jamais de compilations',
-      '- n’inclus jamais de titres vagues ou ambigus',
-      '- évite les live, remaster, deluxe, bonus track, alternate take, edit, version obscure',
-      '- utilise le titre standard le plus courant',
-      '- utilise l’artiste principal le plus connu sur Spotify',
-      '- préfère des titres canoniques, simples à rechercher',
-      '- si un morceau est ambigu, choisis un autre morceau',
+      '- ne renvoie que des artistes réels et connus de Spotify',
+      '- n’invente jamais un artiste',
+      '- ne renvoie jamais de morceaux',
+      '- ne renvoie jamais d’albums',
+      '- ne renvoie jamais de labels ou de genres seuls à la place d’un artiste',
+      '- privilégie des artistes cohérents avec la demande de l’utilisateur',
+      '- préfère des artistes suffisamment connus pour avoir des top tracks disponibles sur Spotify',
+      '- mélange fidélité à la demande et accessibilité Spotify',
       'Réponds UNIQUEMENT avec un objet JSON valide.',
       'Pas de markdown. Pas de backticks. Pas de phrase avant ou après.',
       'Format obligatoire :',
-      '{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}'
+      '{"playlist_title":"...","artists":["...","...","..."]}'
     ].join('\n');
 
     const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -61,8 +62,8 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2500,
-        temperature: 0.4,
+        max_tokens: 1800,
+        temperature: 0.3,
         system: systemPrompt,
         messages: [
           {
@@ -119,28 +120,26 @@ export default async function handler(req, res) {
         ? parsed.playlist_title.trim()
         : 'Ma playlist';
 
-    const rawTracks = Array.isArray(parsed?.tracks) ? parsed.tracks : [];
+    const rawArtists = Array.isArray(parsed?.artists) ? parsed.artists : [];
 
-    const cleanedTracks = rawTracks
-      .map(track => ({
-        title: typeof track?.title === 'string' ? track.title.trim() : '',
-        artist: typeof track?.artist === 'string' ? track.artist.trim() : '',
-        duration: typeof track?.duration === 'string' ? track.duration.trim() : ''
-      }))
-      .filter(track => track.title && track.artist)
-      .filter(track => !looksLikeAlbum(track.title))
-      .slice(0, count);
+    const cleanedArtists = [...new Set(
+      rawArtists
+        .map(artist => typeof artist === 'string' ? artist.trim() : '')
+        .filter(Boolean)
+        .filter(artist => !looksInvalidArtist(artist))
+    )].slice(0, artistCount);
 
-    if (cleanedTracks.length === 0) {
+    if (cleanedArtists.length === 0) {
       return res.status(502).json({
-        error: 'No valid tracks returned by Anthropic',
+        error: 'No valid artists returned by Anthropic',
         raw: parsed
       });
     }
 
     return res.status(200).json({
       playlist_title: playlistTitle,
-      tracks: cleanedTracks
+      artists: cleanedArtists,
+      requested_track_count: count
     });
   } catch (e) {
     console.error('API /generate ERROR =', e);
@@ -150,15 +149,22 @@ export default async function handler(req, res) {
   }
 }
 
-function looksLikeAlbum(title) {
-  const t = String(title || '').toLowerCase();
-  const badPatterns = [
+function looksInvalidArtist(value) {
+  const v = String(value || '').toLowerCase().trim();
+
+  if (!v) return true;
+
+  const banned = [
     'greatest hits',
     'best of',
-    'collection',
+    'various artists',
+    'playlist',
+    'soundtrack',
+    'compilation',
     'anthology',
     'complete recordings',
     'deluxe edition'
   ];
-  return badPatterns.some(pattern => t.includes(pattern));
+
+  return banned.some(pattern => v.includes(pattern));
 }
