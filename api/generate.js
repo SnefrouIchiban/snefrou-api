@@ -1,7 +1,7 @@
 // api/generate.js
 
 const MUSICBRAINZ_BASE = 'https://musicbrainz.org/ws/2';
-const USER_AGENT = 'Snefrou/1.0 ( playlist validation ; contact: hello@example.com )';
+const MUSICBRAINZ_USER_AGENT = 'Snefrou/1.0 ( https://snefrou-api.vercel.app )';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -36,77 +36,99 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
     }
 
-    const collected = [];
-    const seenPairs = new Set();
-    const seenTitles = new Set();
+    const playlistTitle = buildPlaylistTitleFromPrompt(prompt);
 
-    let pass = 0;
-    const maxPasses = 4;
+    const accepted = [];
+    const softValidatedPool = [];
+    const seenPairKeys = new Set();
+    const rejectedPairKeys = new Set();
 
-    while (collected.length < count && pass < maxPasses) {
-      pass += 1;
+    const maxPasses = 5;
 
-      const missing = count - collected.length;
-      const candidateTarget = Math.max(missing * 4, 20);
+    for (let pass = 1; pass <= maxPasses; pass += 1) {
+      if (accepted.length >= count) break;
 
-      const exclusionList = collected
-        .map(track => `${track.title} — ${track.artist}`)
-        .join(' | ');
+      const missing = count - accepted.length;
+      const candidateTarget = computeCandidateTarget(missing, pass);
 
-      const candidates = await generateCandidates({
+      const candidates = await generateCandidateTracks({
         prompt,
         requestedCount: count,
         candidateTarget,
-        exclusionList,
+        accepted,
+        rejectedPairKeys,
         pass
       });
 
       for (const candidate of candidates) {
-        if (collected.length >= count) break;
+        if (accepted.length >= count) break;
 
-        const pairKey = normalize(candidate.title) + '__' + normalize(candidate.artist);
-        const titleKey = normalize(candidate.title);
+        const pairKey = buildPairKey(candidate.title, candidate.artist);
+        if (!pairKey) continue;
+        if (seenPairKeys.has(pairKey) || rejectedPairKeys.has(pairKey)) continue;
 
-        if (seenPairs.has(pairKey)) continue;
-        seenPairs.add(pairKey);
+        seenPairKeys.add(pairKey);
 
-        const validated = await validateTrackWithMusicBrainz(candidate.title, candidate.artist);
+        const validation = await validateTrackAgainstMusicBrainz(candidate.title, candidate.artist);
 
-        await sleep(220);
+        // MusicBrainz: on ralentit volontairement
+        await sleep(1100);
 
-        if (!validated) continue;
-
-        const dedupeTitleArtist = normalize(validated.title) + '__' + normalize(validated.artist);
-        if (collected.some(t => normalize(t.title) + '__' + normalize(t.artist) === dedupeTitleArtist)) {
+        if (!validation.ok) {
+          rejectedPairKeys.add(pairKey);
           continue;
         }
 
-        if (seenTitles.has(titleKey) && !sameLooseArtistFamily(collected, validated)) {
+        const validatedTrack = {
+          title: validation.title,
+          artist: validation.artist,
+          duration: candidate.duration || ''
+        };
+
+        const validatedKey = buildPairKey(validatedTrack.title, validatedTrack.artist);
+        if (!validatedKey) continue;
+        if (accepted.some(track => buildPairKey(track.title, track.artist) === validatedKey)) {
+          continue;
+        }
+        if (softValidatedPool.some(track => buildPairKey(track.title, track.artist) === validatedKey)) {
           continue;
         }
 
-        seenTitles.add(titleKey);
-        collected.push(validated);
+        if (validation.tier === 'strict') {
+          accepted.push(validatedTrack);
+        } else {
+          softValidatedPool.push(validatedTrack);
+        }
       }
     }
 
-    if (collected.length === 0) {
+    if (accepted.length < count && softValidatedPool.length > 0) {
+      for (const track of softValidatedPool) {
+        if (accepted.length >= count) break;
+        const key = buildPairKey(track.title, track.artist);
+        if (!accepted.some(t => buildPairKey(t.title, t.artist) === key)) {
+          accepted.push(track);
+        }
+      }
+    }
+
+    if (accepted.length === 0) {
       return res.status(502).json({
         error: 'No validated tracks could be produced'
       });
     }
 
-    if (collected.length < count) {
+    if (accepted.length < count) {
       return res.status(200).json({
-        playlist_title: buildFallbackTitle(prompt),
-        tracks: collected,
-        warning: `Only ${collected.length} validated tracks found out of ${count} requested.`
+        playlist_title: playlistTitle,
+        tracks: accepted,
+        warning: `Seulement ${accepted.length} titres validés sur ${count} demandés.`
       });
     }
 
     return res.status(200).json({
-      playlist_title: buildFallbackTitle(prompt),
-      tracks: collected.slice(0, count)
+      playlist_title: playlistTitle,
+      tracks: accepted.slice(0, count)
     });
   } catch (e) {
     console.error('API /generate ERROR =', e);
@@ -116,25 +138,55 @@ export default async function handler(req, res) {
   }
 }
 
-async function generateCandidates({ prompt, requestedCount, candidateTarget, exclusionList, pass }) {
+function computeCandidateTarget(missing, pass) {
+  if (pass === 1) return Math.max(missing * 5, 24);
+  if (pass === 2) return Math.max(missing * 5, 22);
+  if (pass === 3) return Math.max(missing * 4, 18);
+  if (pass === 4) return Math.max(missing * 4, 16);
+  return Math.max(missing * 3, 14);
+}
+
+async function generateCandidateTracks({
+  prompt,
+  requestedCount,
+  candidateTarget,
+  accepted,
+  rejectedPairKeys,
+  pass
+}) {
+  const exclusionLines = accepted
+    .map(track => `${track.title} — ${track.artist}`)
+    .slice(0, 50);
+
+  const rejectedExamples = [...rejectedPairKeys]
+    .slice(0, 40)
+    .map(key => key.replace('__', ' — '));
+
   const systemPrompt = [
-    'Tu es un expert musical extrêmement prudent.',
-    `L’utilisateur veut une playlist finale de ${requestedCount} morceaux validés.`,
+    'Tu es un expert musical extrêmement précis.',
+    `L’utilisateur veut une playlist finale de ${requestedCount} morceaux.`,
     `Tu dois proposer exactement ${candidateTarget} couples titre/artiste candidats.`,
+    'Objectif prioritaire : coller au plus près de la demande de l’utilisateur.',
+    'Objectif secondaire : éviter les erreurs factuelles évidentes.',
     'Règles impératives :',
-    '- ne renvoie que des morceaux réellement célèbres ou clairement catalogués',
+    '- ne renvoie que des morceaux réels',
     '- n’invente jamais de titre',
     '- n’invente jamais d’artiste',
     '- ne renvoie jamais d’albums',
-    '- évite les live, remaster, deluxe, bonus track, alternate take, version obscure, edit',
-    '- évite les deep cuts, raretés, faces B peu connues',
-    '- privilégie les titres canoniques, simples, massivement reconnaissables',
-    '- si tu as un doute sur l’existence précise du morceau, tu dois l’exclure',
-    '- ne renvoie pas deux fois le même morceau',
-    '- ne renvoie pas les exclusions suivantes si elles existent : ' + (exclusionList || 'aucune'),
+    '- évite les live, remaster, deluxe, edit, bonus track, alternate take, versions obscures',
+    '- évite les compilations et intitulés de release',
+    '- privilégie la fidélité stylistique, émotionnelle, historique et culturelle au prompt',
+    '- n’hésite pas à choisir des morceaux moins mainstream si cela colle mieux au prompt, mais ils doivent rester réels',
+    '- évite de répéter les mêmes standards trop génériques si le prompt suggère une couleur plus spécifique',
+    '- si tu as un doute sérieux sur l’existence exacte d’un morceau, tu dois l’exclure',
+    'Exclusions déjà retenues :',
+    exclusionLines.length ? exclusionLines.join(' | ') : 'aucune',
+    'Exclusions déjà rejetées :',
+    rejectedExamples.length ? rejectedExamples.join(' | ') : 'aucune',
     'Réponds UNIQUEMENT avec un objet JSON valide.',
+    'Pas de markdown. Pas de backticks.',
     'Format obligatoire :',
-    '{"playlist_title":"...","tracks":[{"title":"...","artist":"..."}]}'
+    '{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}'
   ].join('\n');
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -146,31 +198,31 @@ async function generateCandidates({ prompt, requestedCount, candidateTarget, exc
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 3000,
-      temperature: 0.2,
+      max_tokens: 3200,
+      temperature: 0.35,
       system: systemPrompt,
       messages: [
         {
           role: 'user',
           content:
             `Passe ${pass}. Demande utilisateur : ${prompt}\n` +
-            `Je veux ${candidateTarget} candidats ultra sûrs.`
+            `Je veux ${candidateTarget} candidats très proches de cette demande.`
         }
       ]
     })
   });
 
-  const raw = await response.text();
+  const rawText = await response.text();
 
   let data;
   try {
-    data = JSON.parse(raw);
+    data = JSON.parse(rawText);
   } catch {
     throw new Error('Anthropic returned non-JSON response');
   }
 
   if (!response.ok) {
-    throw new Error(`Anthropic request failed: ${raw}`);
+    throw new Error(`Anthropic request failed: ${rawText}`);
   }
 
   const textBlock = data.content?.find(block => block.type === 'text');
@@ -192,65 +244,111 @@ async function generateCandidates({ prompt, requestedCount, candidateTarget, exc
   return rawTracks
     .map(track => ({
       title: typeof track?.title === 'string' ? track.title.trim() : '',
-      artist: typeof track?.artist === 'string' ? track.artist.trim() : ''
+      artist: typeof track?.artist === 'string' ? track.artist.trim() : '',
+      duration: typeof track?.duration === 'string' ? track.duration.trim() : ''
     }))
     .filter(track => track.title && track.artist)
     .filter(track => !looksLikeAlbum(track.title))
-    .filter(track => !looksLikeVersionNoise(track.title));
+    .filter(track => !looksLikeReleaseNoise(track.title))
+    .filter(track => !looksLikeGarbage(track.title, track.artist));
 }
 
-async function validateTrackWithMusicBrainz(title, artist) {
-  const query = `recording:"${escapeLucene(title)}" AND artist:"${escapeLucene(artist)}"`;
-  const url = `${MUSICBRAINZ_BASE}/recording?query=${encodeURIComponent(query)}&limit=5&fmt=json`;
+async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
+  const exactQuery = `recording:"${escapeLucene(inputTitle)}" AND artist:"${escapeLucene(inputArtist)}"`;
+  const looseQuery = `"${escapeLucene(inputTitle)}" AND "${escapeLucene(inputArtist)}"`;
 
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': USER_AGENT,
-      'Accept': 'application/json'
-    }
-  });
+  const exactResults = await searchMusicBrainzRecordings(exactQuery, 6);
+  const looseResults = exactResults.length ? [] : await searchMusicBrainzRecordings(looseQuery, 8);
 
-  if (!response.ok) {
-    return null;
-  }
-
-  const data = await response.json();
-  const recordings = Array.isArray(data?.recordings) ? data.recordings : [];
+  const candidates = [...exactResults, ...looseResults];
 
   let best = null;
   let bestScore = -Infinity;
 
-  for (const rec of recordings) {
+  for (const rec of candidates) {
     const recTitle = typeof rec?.title === 'string' ? rec.title.trim() : '';
-    const artistCredit = Array.isArray(rec?.['artist-credit']) ? rec['artist-credit'] : [];
-    const recArtist = artistCredit
-      .map(part => typeof part?.name === 'string' ? part.name.trim() : '')
-      .filter(Boolean)
-      .join(' & ');
+    const recArtist = extractArtistCredit(rec);
 
     if (!recTitle || !recArtist) continue;
+    if (looksLikeReleaseNoise(recTitle)) continue;
+    if (looksLikeGarbage(recTitle, recArtist)) continue;
 
-    if (looksLikeVersionNoise(recTitle)) continue;
-
-    const score = scoreCandidate(title, artist, recTitle, recArtist);
+    const score = scoreMusicBrainzMatch(inputTitle, inputArtist, recTitle, recArtist);
 
     if (score > bestScore) {
       bestScore = score;
       best = {
         title: recTitle,
-        artist: recArtist
+        artist: recArtist,
+        score
       };
     }
   }
 
-  if (!best || bestScore < 160) {
-    return null;
+  if (!best) {
+    return { ok: false };
   }
 
-  return best;
+  if (best.score >= 195) {
+    return {
+      ok: true,
+      tier: 'strict',
+      title: best.title,
+      artist: best.artist
+    };
+  }
+
+  if (best.score >= 165) {
+    return {
+      ok: true,
+      tier: 'soft',
+      title: best.title,
+      artist: best.artist
+    };
+  }
+
+  return { ok: false };
 }
 
-function scoreCandidate(inputTitle, inputArtist, foundTitle, foundArtist) {
+async function searchMusicBrainzRecordings(query, limit) {
+  const url =
+    `${MUSICBRAINZ_BASE}/recording` +
+    `?query=${encodeURIComponent(query)}` +
+    `&limit=${limit}` +
+    `&fmt=json`;
+
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': MUSICBRAINZ_USER_AGENT,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = await response.json();
+  return Array.isArray(data?.recordings) ? data.recordings : [];
+}
+
+function extractArtistCredit(recording) {
+  const artistCredit = Array.isArray(recording?.['artist-credit'])
+    ? recording['artist-credit']
+    : [];
+
+  const parts = artistCredit
+    .map(part => {
+      if (typeof part?.name === 'string') return part.name.trim();
+      if (typeof part === 'string') return part.trim();
+      return '';
+    })
+    .filter(Boolean);
+
+  return parts.join(' ');
+}
+
+function scoreMusicBrainzMatch(inputTitle, inputArtist, foundTitle, foundArtist) {
   let score = 0;
 
   const t1 = normalize(inputTitle);
@@ -258,20 +356,23 @@ function scoreCandidate(inputTitle, inputArtist, foundTitle, foundArtist) {
   const t2 = normalize(foundTitle);
   const a2 = normalize(foundArtist);
 
-  if (t1 === t2) score += 120;
-  else if (t2.includes(t1) || t1.includes(t2)) score += 70;
+  if (t1 === t2) score += 125;
+  else if (t2.includes(t1) || t1.includes(t2)) score += 80;
 
-  if (a1 === a2) score += 120;
-  else if (a2.includes(a1) || a1.includes(a2)) score += 70;
+  if (a1 === a2) score += 125;
+  else if (a2.includes(a1) || a1.includes(a2)) score += 80;
 
-  if (looksLikeVersionNoise(foundTitle)) score -= 80;
+  if (looksLikeReleaseNoise(foundTitle)) score -= 70;
+  if (hasManyVersionTokens(foundTitle)) score -= 35;
 
   return score;
 }
 
-function sameLooseArtistFamily(collected, validated) {
-  const targetArtist = normalize(validated.artist);
-  return collected.some(track => normalize(track.artist) === targetArtist);
+function buildPairKey(title, artist) {
+  const t = normalize(title);
+  const a = normalize(artist);
+  if (!t || !a) return '';
+  return `${t}__${a}`;
 }
 
 function normalize(str) {
@@ -301,8 +402,8 @@ function looksLikeAlbum(title) {
   return badPatterns.some(pattern => t.includes(pattern));
 }
 
-function looksLikeVersionNoise(title) {
-  const t = normalize(title);
+function looksLikeReleaseNoise(value) {
+  const t = normalize(value);
   const badPatterns = [
     'live',
     'remaster',
@@ -310,15 +411,41 @@ function looksLikeVersionNoise(title) {
     'deluxe',
     'bonus track',
     'alternate take',
-    'edit',
     'radio edit',
     'extended mix',
-    'version'
+    'instrumental version',
+    'karaoke',
+    'original soundtrack',
+    'motion picture soundtrack'
   ];
   return badPatterns.some(pattern => t.includes(pattern));
 }
 
-function buildFallbackTitle(prompt) {
+function hasManyVersionTokens(value) {
+  const t = normalize(value);
+  const tokens = ['live', 'edit', 'mix', 'version', 'remaster', 'take'];
+  let count = 0;
+  for (const token of tokens) {
+    if (t.includes(token)) count += 1;
+  }
+  return count >= 2;
+}
+
+function looksLikeGarbage(title, artist) {
+  const combined = `${normalize(title)} ${normalize(artist)}`;
+  const banned = [
+    'various artists',
+    'unknown artist',
+    'tracklist',
+    'disc 1',
+    'disc 2',
+    'side a',
+    'side b'
+  ];
+  return banned.some(pattern => combined.includes(pattern));
+}
+
+function buildPlaylistTitleFromPrompt(prompt) {
   const clean = String(prompt || '').trim();
   if (!clean) return 'Ma playlist';
   return clean.length > 80 ? clean.slice(0, 80).trim() : clean;
