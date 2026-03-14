@@ -1,7 +1,7 @@
 // api/generate.js
 
 const MUSICBRAINZ_BASE = 'https://musicbrainz.org/ws/2';
-const MUSICBRAINZ_USER_AGENT = 'Snefrou/1.0 (https://snefrou-api.vercel.app)';
+const MUSICBRAINZ_USER_AGENT = 'OctopusGarden/1.0 (https://snefrou-api.vercel.app)';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -38,32 +38,32 @@ export default async function handler(req, res) {
 
     const playlistTitle = buildPlaylistTitleFromPrompt(prompt);
 
-    const accepted = [];
-    const softPool = [];
+    const validatedPool = [];
     const seenKeys = new Set();
     const usedPrompts = [];
 
-    // Deux passes max pour éviter de refaire exploser Vercel
-    for (let pass = 1; pass <= 2; pass += 1) {
-      if (accepted.length >= count) break;
+    const targetValidatedPoolSize = Math.max(count * 2, 24);
 
-      const missing = count - accepted.length;
+    for (let pass = 1; pass <= 2; pass += 1) {
+      if (validatedPool.length >= targetValidatedPoolSize) break;
+
+      const remainingPool = targetValidatedPoolSize - validatedPool.length;
       const candidateTarget = pass === 1
-        ? Math.max(missing * 4, 24)
-        : Math.max(missing * 3, 16);
+        ? Math.max(remainingPool * 3, 30)
+        : Math.max(remainingPool * 2, 20);
 
       const candidates = await generateCandidateTracks({
         prompt,
         requestedCount: count,
         candidateTarget,
         pass,
-        alreadyAccepted: accepted,
+        alreadyValidated: validatedPool,
         alreadyRejectedOrSeen: [...seenKeys],
         usedPrompts
       });
 
       for (const candidate of candidates) {
-        if (accepted.length >= count) break;
+        if (validatedPool.length >= targetValidatedPoolSize) break;
 
         const originalKey = buildPairKey(candidate.title, candidate.artist);
         if (!originalKey || seenKeys.has(originalKey)) continue;
@@ -75,70 +75,53 @@ export default async function handler(req, res) {
 
         if (!validation.ok) continue;
 
-        const track = {
+        const validatedTrack = {
           title: validation.title,
           artist: validation.artist,
           duration: candidate.duration || ''
         };
 
-        const validatedKey = buildPairKey(track.title, track.artist);
+        const validatedKey = buildPairKey(validatedTrack.title, validatedTrack.artist);
         if (!validatedKey) continue;
 
-        if (
-          accepted.some(t => buildPairKey(t.title, t.artist) === validatedKey) ||
-          softPool.some(t => buildPairKey(t.title, t.artist) === validatedKey)
-        ) {
+        if (validatedPool.some(t => buildPairKey(t.title, t.artist) === validatedKey)) {
           continue;
         }
 
-        if (!canAcceptArtist(accepted, track.artist, count, false)) {
-          softPool.push(track);
-          continue;
-        }
-
-        if (validation.tier === 'strict') {
-          accepted.push(track);
-        } else {
-          softPool.push(track);
-        }
+        validatedPool.push(validatedTrack);
       }
     }
 
-    // Deuxième vague : on complète avec les soft matches
-    if (accepted.length < count && softPool.length > 0) {
-      for (const track of softPool) {
-        if (accepted.length >= count) break;
-
-        const key = buildPairKey(track.title, track.artist);
-        if (accepted.some(t => buildPairKey(t.title, t.artist) === key)) {
-          continue;
-        }
-
-        if (!canAcceptArtist(accepted, track.artist, count, true)) {
-          continue;
-        }
-
-        accepted.push(track);
-      }
-    }
-
-    if (accepted.length === 0) {
+    if (validatedPool.length === 0) {
       return res.status(502).json({
         error: 'No validated tracks could be produced'
       });
     }
 
-    if (accepted.length < count) {
-      return res.status(200).json({
-        playlist_title: playlistTitle,
-        tracks: accepted,
-        warning: `Seulement ${accepted.length} titres validés sur ${count} demandés.`
+    const rankedTracks = await rankValidatedTracks({
+      prompt,
+      validatedTracks: validatedPool,
+      count
+    });
+
+    const finalTracks = applyRanking({
+      validatedTracks: validatedPool,
+      rankedTracks,
+      count
+    });
+
+    if (finalTracks.length === 0) {
+      return res.status(502).json({
+        error: 'Ranking produced no usable tracks'
       });
     }
 
     return res.status(200).json({
       playlist_title: playlistTitle,
-      tracks: accepted.slice(0, count)
+      tracks: finalTracks,
+      ...(finalTracks.length < count
+        ? { warning: `Seulement ${finalTracks.length} titres validés sur ${count} demandés.` }
+        : {})
     });
   } catch (e) {
     console.error('API /generate ERROR =', e);
@@ -153,23 +136,25 @@ async function generateCandidateTracks({
   requestedCount,
   candidateTarget,
   pass,
-  alreadyAccepted,
+  alreadyValidated,
   alreadyRejectedOrSeen,
   usedPrompts
 }) {
-  const acceptedLines = alreadyAccepted
+  const validatedLines = alreadyValidated
     .map(track => `${track.title} — ${track.artist}`)
     .slice(0, 40);
 
   const seenLines = alreadyRejectedOrSeen
-    .slice(0, 60)
+    .slice(0, 80)
     .map(key => key.replace('__', ' — '));
 
   const systemPrompt = [
-    'Tu es un expert musical extrêmement précis.',
+    'Tu es un programmateur musical de très haut niveau, obsessionnel, cultivé, précis et anti-consensuel.',
     `L’utilisateur veut une playlist finale de ${requestedCount} morceaux.`,
     `Tu dois proposer exactement ${candidateTarget} couples titre/artiste candidats.`,
-    'Objectif prioritaire : coller au plus près de la demande de l’utilisateur.',
+    'Ta mission n’est pas de proposer les morceaux les plus connus.',
+    'Ta mission est de proposer les morceaux les plus justes, les plus inspirés et les moins évidents possible.',
+    '',
     'Règles impératives :',
     '- ne renvoie que des morceaux réels',
     '- n’invente jamais de titre',
@@ -177,60 +162,64 @@ async function generateCandidateTracks({
     '- ne renvoie jamais d’albums',
     '- évite les live, remaster, deluxe, edit, bonus track, alternate take, versions obscures',
     '- évite les intitulés de compilations ou de releases',
-    '- privilégie la fidélité au ton, à l’époque, au style, à la géographie, à la couleur culturelle et émotionnelle du prompt',
-    '- évite les propositions trop génériques si le prompt est spécifique',
-    '- si tu as un doute sérieux sur l’existence exacte d’un morceau, exclue-le',
+    '- colle au plus près du ton, de l’époque, du style, de la géographie, de la couleur culturelle et émotionnelle du prompt',
+    '- évite les propositions génériques, paresseuses ou grand public',
+    '- évite autant que possible les tubes mondiaux, les titres les plus streamés, les morceaux signature ultra-connus et les recommandations trop prévisibles',
+    '- préfère des morceaux excellents mais légèrement moins évidents',
+    '- privilégie les deep cuts, perles cachées, morceaux d’album, titres cultes moins exposés, raretés accessibles, faces moins attendues d’artistes connus',
+    '- n’utilise un immense tube que s’il est vraiment indispensable à la logique du prompt',
+    '- si le prompt s’y prête, va chercher des artistes secondaires, des scènes locales, des titres moins canonisés',
     '- cherche la diversité, mais sans sacrifier la fidélité au prompt',
-    'Titres déjà retenus :',
-    acceptedLines.length ? acceptedLines.join(' | ') : 'aucun',
+    '- vise implicitement un équilibre entre morceaux immédiatement convaincants mais peu évidents, deep cuts d’artistes connus, et artistes moins exposés mais très pertinents',
+    '- si tu as un doute sérieux sur l’existence exacte d’un morceau, exclue-le',
+    '',
+    'Important :',
+    '- la playlist doit donner l’impression d’avoir été faite par quelqu’un qui connaît vraiment la musique, pas par un algorithme paresseux',
+    '- mieux vaut un morceau très juste et moins connu qu’un tube attendu',
+    '- évite de sortir immédiatement les artistes les plus évidents du genre, de l’époque ou de l’ambiance',
+    '',
+    'Titres déjà validés :',
+    validatedLines.length ? validatedLines.join(' | ') : 'aucun',
     'Titres déjà vus ou refusés :',
     seenLines.length ? seenLines.join(' | ') : 'aucun',
+    '',
     'Réponds UNIQUEMENT avec un objet JSON valide.',
     'Pas de markdown. Pas de backticks.',
     'Format obligatoire :',
     '{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}'
   ].join('\n');
 
-  const userPrompt =
-    `Passe ${pass}. Demande utilisateur : ${prompt}\n` +
-    `Je veux ${candidateTarget} candidats très proches de cette demande.\n` +
-    `Évite de me redonner des morceaux déjà vus.\n`;
+  const userPrompt = pass === 1
+    ? [
+        `Passe ${pass}. Demande utilisateur : ${prompt}`,
+        `Je veux exactement ${candidateTarget} candidats très proches de cette demande.`,
+        'Interdiction de proposer les morceaux les plus connus, les titres signature ou les tubes mondiaux les plus évidents.',
+        'Cherche des choix fins, crédibles, surprenants, cultivés, mais parfaitement cohérents avec la demande.',
+        'Évite de me redonner des morceaux déjà vus.'
+      ].join('\n')
+    : [
+        `Passe ${pass}. Demande utilisateur : ${prompt}`,
+        `Je veux exactement ${candidateTarget} candidats très proches de cette demande.`,
+        'Tu peux légèrement réouvrir le champ, mais évite toujours les suggestions paresseuses, trop attendues ou trop mainstream.',
+        'Cherche des choix éditoriaux solides, élégants et moins prévisibles.',
+        'Évite de me redonner des morceaux déjà vus.'
+      ].join('\n');
 
   usedPrompts.push(userPrompt);
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2600,
-      temperature: 0.4,
-      system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: userPrompt
-        }
-      ]
-    })
+  const data = await callAnthropicJson({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 3200,
+    temperature: 0.68,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: userPrompt
+      }
+    ],
+    errorPrefix: 'Anthropic candidate generation failed'
   });
-
-  const rawText = await response.text();
-
-  let data;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    throw new Error('Anthropic returned non-JSON response');
-  }
-
-  if (!response.ok) {
-    throw new Error(`Anthropic request failed: ${rawText}`);
-  }
 
   const textBlock = data.content?.find(block => block.type === 'text');
   const text = textBlock?.text?.trim();
@@ -241,9 +230,9 @@ async function generateCandidateTracks({
 
   let parsed;
   try {
-    parsed = JSON.parse(text.replace(/```json|```/gi, '').trim());
+    parsed = JSON.parse(stripCodeFences(text));
   } catch {
-    throw new Error('Invalid JSON returned by Anthropic');
+    throw new Error('Invalid JSON returned by Anthropic during candidate generation');
   }
 
   const rawTracks = Array.isArray(parsed?.tracks) ? parsed.tracks : [];
@@ -258,6 +247,121 @@ async function generateCandidateTracks({
     .filter(track => !looksLikeAlbum(track.title))
     .filter(track => !looksLikeReleaseNoise(track.title))
     .filter(track => !looksLikeGarbage(track.title, track.artist));
+}
+
+async function rankValidatedTracks({ prompt, validatedTracks, count }) {
+  const limitedPool = validatedTracks.slice(0, 60);
+
+  const systemPrompt = [
+    'Tu es un programmateur musical de très haut niveau.',
+    'Tu dois sélectionner les meilleurs morceaux parmi une liste de morceaux déjà validés.',
+    'Tous les morceaux proposés existent réellement.',
+    'Ta mission est de composer une sélection finale brillante, cohérente, surprenante et peu évidente.',
+    '',
+    'Priorités :',
+    '- coller au plus près du prompt utilisateur',
+    '- éviter les tubes trop évidents et les choix paresseux',
+    '- éviter les redondances esthétiques',
+    '- éviter plusieurs morceaux qui remplissent exactement la même fonction',
+    '- privilégier les morceaux les plus justes, les plus inspirés, les moins prévisibles',
+    '- éviter de surreprésenter un même artiste',
+    '- faire une vraie sélection de curateur, pas une liste de best-of',
+    '',
+    `Tu dois choisir exactement ${Math.min(count, limitedPool.length)} morceaux.`,
+    '',
+    'Réponds UNIQUEMENT avec un objet JSON valide.',
+    'Pas de markdown. Pas de backticks.',
+    'Format obligatoire :',
+    '{"tracks":[{"title":"...","artist":"..."}]}'
+  ].join('\n');
+
+  const userPrompt = [
+    `Demande utilisateur : ${prompt}`,
+    `Choisis exactement ${Math.min(count, limitedPool.length)} morceaux parmi cette liste validée :`,
+    ...limitedPool.map(track => `- ${track.title} — ${track.artist}`)
+  ].join('\n');
+
+  const data = await callAnthropicJson({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1800,
+    temperature: 0.55,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: userPrompt
+      }
+    ],
+    errorPrefix: 'Anthropic ranking failed'
+  });
+
+  const textBlock = data.content?.find(block => block.type === 'text');
+  const text = textBlock?.text?.trim();
+
+  if (!text) {
+    throw new Error('Anthropic returned no ranking text');
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(stripCodeFences(text));
+  } catch {
+    throw new Error('Invalid JSON returned by Anthropic during ranking');
+  }
+
+  const ranked = Array.isArray(parsed?.tracks) ? parsed.tracks : [];
+
+  return ranked
+    .map(track => ({
+      title: typeof track?.title === 'string' ? track.title.trim() : '',
+      artist: typeof track?.artist === 'string' ? track.artist.trim() : ''
+    }))
+    .filter(track => track.title && track.artist);
+}
+
+function applyRanking({ validatedTracks, rankedTracks, count }) {
+  const validatedMap = new Map();
+
+  for (const track of validatedTracks) {
+    validatedMap.set(buildPairKey(track.title, track.artist), track);
+  }
+
+  const selected = [];
+  const seen = new Set();
+
+  for (const ranked of rankedTracks) {
+    const key = buildPairKey(ranked.title, ranked.artist);
+    if (!key || seen.has(key)) continue;
+
+    const realTrack = validatedMap.get(key);
+    if (!realTrack) continue;
+    if (!canAcceptArtistOnce(selected, realTrack.artist)) continue;
+
+    selected.push(realTrack);
+    seen.add(key);
+
+    if (selected.length >= count) break;
+  }
+
+  if (selected.length < count) {
+    for (const track of validatedTracks) {
+      const key = buildPairKey(track.title, track.artist);
+      if (!key || seen.has(key)) continue;
+      if (!canAcceptArtistOnce(selected, track.artist)) continue;
+
+      selected.push(track);
+      seen.add(key);
+
+      if (selected.length >= count) break;
+    }
+  }
+
+  return selected.slice(0, count);
+}
+
+function canAcceptArtistOnce(currentTracks, artistName) {
+  const normalizedArtist = normalize(artistName);
+  return !currentTracks.some(track => normalize(track.artist) === normalizedArtist);
 }
 
 async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
@@ -339,6 +443,46 @@ async function searchMusicBrainzRecordings(query, limit) {
   return Array.isArray(data?.recordings) ? data.recordings : [];
 }
 
+async function callAnthropicJson({
+  model,
+  max_tokens,
+  temperature,
+  system,
+  messages,
+  errorPrefix
+}) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens,
+      temperature,
+      system,
+      messages
+    })
+  });
+
+  const rawText = await response.text();
+
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(`${errorPrefix}: non-JSON response`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`${errorPrefix}: ${rawText}`);
+  }
+
+  return data;
+}
+
 function extractArtistCredit(recording) {
   const artistCredit = Array.isArray(recording?.['artist-credit'])
     ? recording['artist-credit']
@@ -373,27 +517,6 @@ function scoreMusicBrainzMatch(inputTitle, inputArtist, foundTitle, foundArtist)
   if (hasManyVersionTokens(foundTitle)) score -= 25;
 
   return score;
-}
-
-function canAcceptArtist(currentTracks, artistName, targetCount, allowSecondWave = false) {
-  const normalizedArtist = normalize(artistName);
-  const countForArtist = currentTracks.filter(
-    track => normalize(track.artist) === normalizedArtist
-  ).length;
-
-  if (countForArtist >= 2) return false;
-
-  // Première vague : on évite d'avoir trop vite 2 titres du même artiste.
-  if (!allowSecondWave && countForArtist >= 1) {
-    const uniqueArtists = new Set(currentTracks.map(track => normalize(track.artist))).size;
-    const remainingSlots = targetCount - currentTracks.length;
-
-    if (uniqueArtists < Math.ceil(targetCount * 0.6) && remainingSlots > 0) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 function buildPairKey(title, artist) {
@@ -477,6 +600,10 @@ function buildPlaylistTitleFromPrompt(prompt) {
   const clean = String(prompt || '').trim();
   if (!clean) return 'Ma playlist';
   return clean.length > 80 ? clean.slice(0, 80).trim() : clean;
+}
+
+function stripCodeFences(text) {
+  return String(text || '').replace(/```json|```/gi, '').trim();
 }
 
 function sleep(ms) {
