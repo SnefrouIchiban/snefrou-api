@@ -443,7 +443,6 @@ const CLIENT_ID = 'cbdd9b0320874109a3640fe744b05c85';
 const REDIRECT_URI = window.location.origin;
 const SCOPES = 'playlist-modify-public playlist-modify-private';
 
-let artistSeeds = [];
 let tracks = [];
 let spotifyToken = null;
 let spotifyUserId = null;
@@ -692,28 +691,37 @@ async function generate() {
     console.log('GENERATE STATUS', res.status, data || raw);
 
     if (!res.ok) {
-      if (res.status === 429) {
-        throw new Error('Trop de requêtes côté serveur. Réessaie dans un instant.');
-      }
       throw new Error(getErrorMessage(raw, data, 'Erreur serveur'));
     }
 
-    if (!data || !Array.isArray(data.artists)) {
+    if (!data || !Array.isArray(data.tracks)) {
       throw new Error('Réponse invalide du serveur');
     }
 
-    artistSeeds = data.artists.filter(a => typeof a === 'string' && a.trim()).map(a => a.trim());
-    document.getElementById('playlist-title').value = data.playlist_title || 'Ma playlist';
+    tracks = data.tracks
+      .filter(t =>
+        t &&
+        typeof t.title === 'string' &&
+        typeof t.artist === 'string' &&
+        t.title.trim() &&
+        t.artist.trim()
+      )
+      .map(t => ({
+        title: t.title.trim(),
+        artist: t.artist.trim(),
+        duration: ''
+      }));
 
-    tracks = artistSeeds.map((artist, i) => ({
-      title: `Artiste source ${i + 1}`,
-      artist,
-      duration: ''
-    }));
+    document.getElementById('playlist-title').value = data.playlist_title || 'Ma playlist';
 
     renderPlaylist();
     document.getElementById('playlist-zone').classList.add('visible');
-    toast('Playlist générée', 'success');
+
+    if (data.warning) {
+      toast(data.warning, 'error');
+    } else {
+      toast('Playlist générée', 'success');
+    }
   } catch (e) {
     console.error(e);
     toast('Erreur génération : ' + e.message, 'error');
@@ -730,7 +738,7 @@ function renderPlaylist() {
     const title = t.title || 'Titre inconnu';
     const artist = t.artist || 'Artiste inconnu';
     const duration = t.duration || '';
-    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(artist)}`;
+    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
 
     const div = document.createElement('div');
     div.className = 'track';
@@ -749,100 +757,79 @@ function renderPlaylist() {
   });
 
   document.getElementById('pl-stats').textContent =
-    `${tracks.length} artistes sources`;
+    `${tracks.length} titres validés`;
 }
 
 function removeTrack(i) {
   tracks.splice(i, 1);
-  artistSeeds.splice(i, 1);
   renderPlaylist();
 }
 
 function copyList() {
   const lines = [document.getElementById('playlist-title').value, ''];
-  artistSeeds.forEach((artist) => lines.push(artist));
+  tracks.forEach((t) => lines.push(`${t.title} - ${t.artist}`));
 
   navigator.clipboard.writeText(lines.join('\n'))
     .then(() => toast('Copié !', 'success'))
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
-async function findArtistId(artistName) {
-  const query = encodeURIComponent(artistName);
+function buildSpotifyQuery(track) {
+  const title = String(track?.title || '').trim();
+  const artist = String(track?.artist || '').trim();
+  return `track:${title} artist:${artist}`;
+}
+
+async function findTrackUri(track) {
+  const query = buildSpotifyQuery(track);
 
   const { res, raw, data } = await spotifyFetch(
-    `https://api.spotify.com/v1/search?q=${query}&type=artist&limit=1`
+    `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`
   );
 
-  console.log('SPOTIFY ARTIST SEARCH', res.status, artistName, data || raw);
+  console.log('SPOTIFY SEARCH', res.status, query, data || raw);
 
   if (!res.ok) {
-    throw new Error(getErrorMessage(raw, data, 'Erreur recherche artiste Spotify'));
+    throw new Error(getErrorMessage(raw, data, 'Erreur recherche Spotify'));
   }
 
-  return data?.artists?.items?.[0]?.id || null;
+  return data?.tracks?.items?.[0]?.uri || null;
 }
 
-async function getArtistTopTracks(artistId) {
-  const { res, raw, data } = await spotifyFetch(
-    `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=FR`
-  );
-
-  console.log('SPOTIFY TOP TRACKS', res.status, artistId, data || raw);
-
-  if (!res.ok) {
-    throw new Error(getErrorMessage(raw, data, 'Erreur top tracks Spotify'));
-  }
-
-  return Array.isArray(data?.tracks) ? data.tracks : [];
-}
-
-function shuffle(array) {
-  const copy = [...array];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-async function resolveTopTracksFromArtists() {
-  const collected = [];
+async function resolveUrisBeforeCreate() {
+  const uris = [];
   let stoppedByRateLimit = false;
 
-  await new Promise(r => setTimeout(r, 3000));
+  await new Promise(r => setTimeout(r, 2500));
 
-  for (const artistName of artistSeeds) {
+  for (const track of tracks) {
     try {
-      const artistId = await findArtistId(artistName);
-
-      if (!artistId) {
-        continue;
-      }
-
-      const topTracks = await getArtistTopTracks(artistId);
-
-      const picked = topTracks.slice(0, 3);
-      for (const track of picked) {
-        if (track?.uri) {
-          collected.push(track.uri);
-        }
-      }
+      const uri = await findTrackUri(track);
+      if (uri) uris.push(uri);
     } catch (e) {
       if (typeof e.message === 'string' && e.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
-        stoppedByRateLimit = true;
-        break;
+        const retryAfter = parseInt(e.message.split(':')[1] || '2', 10);
+        await new Promise(r => setTimeout(r, (retryAfter + 2) * 1000));
+
+        try {
+          const retryUri = await findTrackUri(track);
+          if (retryUri) uris.push(retryUri);
+        } catch (retryError) {
+          if (typeof retryError.message === 'string' && retryError.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
+            stoppedByRateLimit = true;
+            break;
+          }
+          console.error('TRACK SEARCH RETRY ERROR', track, retryError);
+        }
+      } else {
+        console.error('TRACK SEARCH ERROR', track, e);
       }
-      console.error('ARTIST RESOLUTION ERROR', artistName, e);
     }
 
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 150));
   }
 
-  return {
-    uris: [...new Set(shuffle(collected))],
-    stoppedByRateLimit
-  };
+  return { uris: [...new Set(uris)], stoppedByRateLimit };
 }
 
 async function createSpotifyPlaylist() {
@@ -851,8 +838,8 @@ async function createSpotifyPlaylist() {
     return;
   }
 
-  if (!artistSeeds.length) {
-    toast('Aucun artiste à envoyer', 'error');
+  if (!tracks.length) {
+    toast('Aucun morceau à envoyer', 'error');
     return;
   }
 
@@ -866,16 +853,16 @@ async function createSpotifyPlaylist() {
   }
 
   const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
-  setLoading(true, 'Récupération des morceaux Spotify…');
+  setLoading(true, 'Recherche des morceaux…');
 
   try {
-    const { uris, stoppedByRateLimit } = await resolveTopTracksFromArtists();
+    const { uris, stoppedByRateLimit } = await resolveUrisBeforeCreate();
 
     if (uris.length === 0) {
       if (stoppedByRateLimit) {
-        throw new Error('Spotify limite les requêtes avant même qu’un artiste ait pu être exploité.');
+        throw new Error('Spotify limite les requêtes avant même qu’un morceau ait pu être résolu.');
       }
-      throw new Error('Aucun morceau exploitable trouvé sur Spotify');
+      throw new Error('Aucun morceau trouvé sur Spotify');
     }
 
     setLoading(true, 'Création de la playlist…');
@@ -916,7 +903,7 @@ async function createSpotifyPlaylist() {
       }
     }
 
-    let msg = `Playlist créée ! ${uris.length} titres ajoutés à partir de ${artistSeeds.length} artistes.`;
+    let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
     if (stoppedByRateLimit) {
       msg += ' Spotify a limité les requêtes avant la fin.';
     }
