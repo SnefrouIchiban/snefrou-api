@@ -37,63 +37,76 @@ export default async function handler(req, res) {
     }
 
     const playlistTitle = buildPlaylistTitleFromPrompt(prompt);
-    const candidateTarget = Math.max(count * 3, 20);
-
-    const candidates = await generateCandidateTracks({
-      prompt,
-      requestedCount: count,
-      candidateTarget
-    });
 
     const accepted = [];
-    const softMatches = [];
+    const softPool = [];
     const seenKeys = new Set();
+    const usedPrompts = [];
 
-    for (const candidate of candidates) {
+    // Deux passes max pour éviter de refaire exploser Vercel
+    for (let pass = 1; pass <= 2; pass += 1) {
       if (accepted.length >= count) break;
 
-      const originalKey = buildPairKey(candidate.title, candidate.artist);
-      if (!originalKey || seenKeys.has(originalKey)) continue;
-      seenKeys.add(originalKey);
+      const missing = count - accepted.length;
+      const candidateTarget = pass === 1
+        ? Math.max(missing * 4, 24)
+        : Math.max(missing * 3, 16);
 
-      const validation = await validateTrackAgainstMusicBrainz(candidate.title, candidate.artist);
+      const candidates = await generateCandidateTracks({
+        prompt,
+        requestedCount: count,
+        candidateTarget,
+        pass,
+        alreadyAccepted: accepted,
+        alreadyRejectedOrSeen: [...seenKeys],
+        usedPrompts
+      });
 
-      await sleep(700);
+      for (const candidate of candidates) {
+        if (accepted.length >= count) break;
 
-      if (!validation.ok) continue;
+        const originalKey = buildPairKey(candidate.title, candidate.artist);
+        if (!originalKey || seenKeys.has(originalKey)) continue;
+        seenKeys.add(originalKey);
 
-      const track = {
-        title: validation.title,
-        artist: validation.artist,
-        duration: candidate.duration || ''
-      };
+        const validation = await validateTrackAgainstMusicBrainz(candidate.title, candidate.artist);
 
-      const validatedKey = buildPairKey(track.title, track.artist);
-      if (!validatedKey) continue;
+        await sleep(450);
 
-      if (
-        accepted.some(t => buildPairKey(t.title, t.artist) === validatedKey) ||
-        softMatches.some(t => buildPairKey(t.title, t.artist) === validatedKey)
-      ) {
-        continue;
-      }
+        if (!validation.ok) continue;
 
-      if (!canAcceptArtist(accepted, track.artist, count, false)) {
-        if (validation.tier === 'strict') {
-          softMatches.push(track);
+        const track = {
+          title: validation.title,
+          artist: validation.artist,
+          duration: candidate.duration || ''
+        };
+
+        const validatedKey = buildPairKey(track.title, track.artist);
+        if (!validatedKey) continue;
+
+        if (
+          accepted.some(t => buildPairKey(t.title, t.artist) === validatedKey) ||
+          softPool.some(t => buildPairKey(t.title, t.artist) === validatedKey)
+        ) {
+          continue;
         }
-        continue;
-      }
 
-      if (validation.tier === 'strict') {
-        accepted.push(track);
-      } else {
-        softMatches.push(track);
+        if (!canAcceptArtist(accepted, track.artist, count, false)) {
+          softPool.push(track);
+          continue;
+        }
+
+        if (validation.tier === 'strict') {
+          accepted.push(track);
+        } else {
+          softPool.push(track);
+        }
       }
     }
 
-    if (accepted.length < count) {
-      for (const track of softMatches) {
+    // Deuxième vague : on complète avec les soft matches
+    if (accepted.length < count && softPool.length > 0) {
+      for (const track of softPool) {
         if (accepted.length >= count) break;
 
         const key = buildPairKey(track.title, track.artist);
@@ -135,7 +148,23 @@ export default async function handler(req, res) {
   }
 }
 
-async function generateCandidateTracks({ prompt, requestedCount, candidateTarget }) {
+async function generateCandidateTracks({
+  prompt,
+  requestedCount,
+  candidateTarget,
+  pass,
+  alreadyAccepted,
+  alreadyRejectedOrSeen,
+  usedPrompts
+}) {
+  const acceptedLines = alreadyAccepted
+    .map(track => `${track.title} — ${track.artist}`)
+    .slice(0, 40);
+
+  const seenLines = alreadyRejectedOrSeen
+    .slice(0, 60)
+    .map(key => key.replace('__', ' — '));
+
   const systemPrompt = [
     'Tu es un expert musical extrêmement précis.',
     `L’utilisateur veut une playlist finale de ${requestedCount} morceaux.`,
@@ -147,16 +176,27 @@ async function generateCandidateTracks({ prompt, requestedCount, candidateTarget
     '- n’invente jamais d’artiste',
     '- ne renvoie jamais d’albums',
     '- évite les live, remaster, deluxe, edit, bonus track, alternate take, versions obscures',
-    '- évite les intitulés de release ou de compilation',
-    '- privilégie les titres qui reflètent vraiment la couleur, l’époque, le ton et l’énergie du prompt',
-    '- évite les propositions génériques si le prompt est précis',
+    '- évite les intitulés de compilations ou de releases',
+    '- privilégie la fidélité au ton, à l’époque, au style, à la géographie, à la couleur culturelle et émotionnelle du prompt',
+    '- évite les propositions trop génériques si le prompt est spécifique',
     '- si tu as un doute sérieux sur l’existence exacte d’un morceau, exclue-le',
-    '- évite de proposer trop de titres du même artiste',
+    '- cherche la diversité, mais sans sacrifier la fidélité au prompt',
+    'Titres déjà retenus :',
+    acceptedLines.length ? acceptedLines.join(' | ') : 'aucun',
+    'Titres déjà vus ou refusés :',
+    seenLines.length ? seenLines.join(' | ') : 'aucun',
     'Réponds UNIQUEMENT avec un objet JSON valide.',
     'Pas de markdown. Pas de backticks.',
     'Format obligatoire :',
     '{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}'
   ].join('\n');
+
+  const userPrompt =
+    `Passe ${pass}. Demande utilisateur : ${prompt}\n` +
+    `Je veux ${candidateTarget} candidats très proches de cette demande.\n` +
+    `Évite de me redonner des morceaux déjà vus.\n`;
+
+  usedPrompts.push(userPrompt);
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -167,15 +207,13 @@ async function generateCandidateTracks({ prompt, requestedCount, candidateTarget
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2800,
-      temperature: 0.35,
+      max_tokens: 2600,
+      temperature: 0.4,
       system: systemPrompt,
       messages: [
         {
           role: 'user',
-          content:
-            `Demande utilisateur : ${prompt}\n` +
-            `Je veux ${candidateTarget} candidats très proches de cette demande.`
+          content: userPrompt
         }
       ]
     })
@@ -227,7 +265,7 @@ async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
   const looseQuery = `"${escapeLucene(inputTitle)}" AND "${escapeLucene(inputArtist)}"`;
 
   const exactResults = await searchMusicBrainzRecordings(exactQuery, 5);
-  const looseResults = exactResults.length ? [] : await searchMusicBrainzRecordings(looseQuery, 6);
+  const looseResults = exactResults.length ? [] : await searchMusicBrainzRecordings(looseQuery, 8);
 
   const candidates = [...exactResults, ...looseResults];
 
@@ -258,7 +296,7 @@ async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
     return { ok: false };
   }
 
-  if (best.score >= 195) {
+  if (best.score >= 180) {
     return {
       ok: true,
       tier: 'strict',
@@ -267,7 +305,7 @@ async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
     };
   }
 
-  if (best.score >= 165) {
+  if (best.score >= 145) {
     return {
       ok: true,
       tier: 'soft',
@@ -325,14 +363,14 @@ function scoreMusicBrainzMatch(inputTitle, inputArtist, foundTitle, foundArtist)
   const t2 = normalize(foundTitle);
   const a2 = normalize(foundArtist);
 
-  if (t1 === t2) score += 125;
-  else if (t2.includes(t1) || t1.includes(t2)) score += 80;
+  if (t1 === t2) score += 115;
+  else if (t2.includes(t1) || t1.includes(t2)) score += 75;
 
-  if (a1 === a2) score += 125;
-  else if (a2.includes(a1) || a1.includes(a2)) score += 80;
+  if (a1 === a2) score += 115;
+  else if (a2.includes(a1) || a1.includes(a2)) score += 75;
 
-  if (looksLikeReleaseNoise(foundTitle)) score -= 70;
-  if (hasManyVersionTokens(foundTitle)) score -= 35;
+  if (looksLikeReleaseNoise(foundTitle)) score -= 60;
+  if (hasManyVersionTokens(foundTitle)) score -= 25;
 
   return score;
 }
@@ -345,10 +383,12 @@ function canAcceptArtist(currentTracks, artistName, targetCount, allowSecondWave
 
   if (countForArtist >= 2) return false;
 
+  // Première vague : on évite d'avoir trop vite 2 titres du même artiste.
   if (!allowSecondWave && countForArtist >= 1) {
     const uniqueArtists = new Set(currentTracks.map(track => normalize(track.artist))).size;
     const remainingSlots = targetCount - currentTracks.length;
-    if (uniqueArtists < targetCount && remainingSlots > 0) {
+
+    if (uniqueArtists < Math.ceil(targetCount * 0.6) && remainingSlots > 0) {
       return false;
     }
   }
