@@ -41,16 +41,16 @@ export default async function handler(req, res) {
     const validatedPool = [];
     const seenKeys = new Set();
 
-    // Version allégée pour Vercel
-    const targetValidatedPoolSize = Math.max(count + 8, 18);
+    // Allègement léger seulement
+    const targetValidatedPoolSize = Math.max(count + 5, 14);
 
     for (let pass = 1; pass <= 2; pass += 1) {
       if (validatedPool.length >= targetValidatedPoolSize) break;
 
       const remainingPool = targetValidatedPoolSize - validatedPool.length;
       const candidateTarget = pass === 1
-        ? Math.max(remainingPool * 2, 18)
-        : Math.max(remainingPool, 10);
+        ? Math.max(remainingPool + 6, 14)
+        : Math.max(remainingPool, 8);
 
       const candidates = await generateCandidateTracksWithRetry({
         prompt,
@@ -70,7 +70,6 @@ export default async function handler(req, res) {
 
         const validation = await validateTrackAgainstMusicBrainz(candidate.title, candidate.artist);
 
-        // pause légère seulement
         await sleep(120);
 
         if (!validation.ok) continue;
