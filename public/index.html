@@ -443,6 +443,7 @@ const CLIENT_ID = 'cbdd9b0320874109a3640fe744b05c85';
 const REDIRECT_URI = window.location.origin;
 const SCOPES = 'playlist-modify-public playlist-modify-private';
 
+let artistSeeds = [];
 let tracks = [];
 let spotifyToken = null;
 let spotifyUserId = null;
@@ -697,19 +698,18 @@ async function generate() {
       throw new Error(getErrorMessage(raw, data, 'Erreur serveur'));
     }
 
-    if (!data || !Array.isArray(data.tracks)) {
+    if (!data || !Array.isArray(data.artists)) {
       throw new Error('Réponse invalide du serveur');
     }
 
-    tracks = (data.tracks || []).filter(t =>
-      t &&
-      typeof t.title === 'string' &&
-      typeof t.artist === 'string' &&
-      t.title.trim() &&
-      t.artist.trim()
-    );
-
+    artistSeeds = data.artists.filter(a => typeof a === 'string' && a.trim()).map(a => a.trim());
     document.getElementById('playlist-title').value = data.playlist_title || 'Ma playlist';
+
+    tracks = artistSeeds.map((artist, i) => ({
+      title: `Artiste source ${i + 1}`,
+      artist,
+      duration: ''
+    }));
 
     renderPlaylist();
     document.getElementById('playlist-zone').classList.add('visible');
@@ -730,7 +730,7 @@ function renderPlaylist() {
     const title = t.title || 'Titre inconnu';
     const artist = t.artist || 'Artiste inconnu';
     const duration = t.duration || '';
-    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(title + ' ' + artist)}`;
+    const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(artist)}`;
 
     const div = document.createElement('div');
     div.className = 'track';
@@ -748,90 +748,101 @@ function renderPlaylist() {
     list.appendChild(div);
   });
 
-  const total = tracks.reduce((acc, t) => {
-    const raw = t.duration || '0:00';
-    const p = raw.split(':');
-    const minutes = parseInt(p[0], 10) || 0;
-    const seconds = parseInt(p[1], 10) || 0;
-    return acc + (minutes * 60) + seconds;
-  }, 0);
-
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-
   document.getElementById('pl-stats').textContent =
-    `${tracks.length} titres · ~${h > 0 ? h + 'h' + String(m).padStart(2, '0') : m + ' min'}`;
+    `${tracks.length} artistes sources`;
 }
 
 function removeTrack(i) {
   tracks.splice(i, 1);
+  artistSeeds.splice(i, 1);
   renderPlaylist();
 }
 
 function copyList() {
   const lines = [document.getElementById('playlist-title').value, ''];
-  tracks.forEach((t) => lines.push(`${t.title || ''} - ${t.artist || ''}`));
+  artistSeeds.forEach((artist) => lines.push(artist));
 
   navigator.clipboard.writeText(lines.join('\n'))
     .then(() => toast('Copié !', 'success'))
     .catch(() => toast('Impossible de copier', 'error'));
 }
 
-function buildSpotifyQuery(track) {
-  const title = String(track?.title || '').trim();
-  const artist = String(track?.artist || '').trim();
-  return `track:${title} artist:${artist}`;
-}
-
-async function findTrackUri(track) {
-  const query = buildSpotifyQuery(track);
+async function findArtistId(artistName) {
+  const query = encodeURIComponent(artistName);
 
   const { res, raw, data } = await spotifyFetch(
-    `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`
+    `https://api.spotify.com/v1/search?q=${query}&type=artist&limit=1`
   );
 
-  console.log('SPOTIFY SEARCH', res.status, query, data || raw);
+  console.log('SPOTIFY ARTIST SEARCH', res.status, artistName, data || raw);
 
   if (!res.ok) {
-    throw new Error(getErrorMessage(raw, data, 'Erreur recherche Spotify'));
+    throw new Error(getErrorMessage(raw, data, 'Erreur recherche artiste Spotify'));
   }
 
-  return data?.tracks?.items?.[0]?.uri || null;
+  return data?.artists?.items?.[0]?.id || null;
 }
 
-async function resolveUrisBeforeCreate() {
-  const uris = [];
+async function getArtistTopTracks(artistId) {
+  const { res, raw, data } = await spotifyFetch(
+    `https://api.spotify.com/v1/artists/${artistId}/top-tracks?market=FR`
+  );
+
+  console.log('SPOTIFY TOP TRACKS', res.status, artistId, data || raw);
+
+  if (!res.ok) {
+    throw new Error(getErrorMessage(raw, data, 'Erreur top tracks Spotify'));
+  }
+
+  return Array.isArray(data?.tracks) ? data.tracks : [];
+}
+
+function shuffle(array) {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+async function resolveTopTracksFromArtists() {
+  const collected = [];
   let stoppedByRateLimit = false;
 
   await new Promise(r => setTimeout(r, 3000));
 
-  for (const track of tracks) {
+  for (const artistName of artistSeeds) {
     try {
-      const uri = await findTrackUri(track);
-      if (uri) uris.push(uri);
+      const artistId = await findArtistId(artistName);
+
+      if (!artistId) {
+        continue;
+      }
+
+      const topTracks = await getArtistTopTracks(artistId);
+
+      const picked = topTracks.slice(0, 3);
+      for (const track of picked) {
+        if (track?.uri) {
+          collected.push(track.uri);
+        }
+      }
     } catch (e) {
       if (typeof e.message === 'string' && e.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
-        const retryAfter = parseInt(e.message.split(':')[1] || '2', 10);
-        await new Promise(r => setTimeout(r, (retryAfter + 2) * 1000));
-        try {
-          const retryUri = await findTrackUri(track);
-          if (retryUri) uris.push(retryUri);
-        } catch (retryError) {
-          if (typeof retryError.message === 'string' && retryError.message.startsWith('SPOTIFY_RATE_LIMIT:')) {
-            stoppedByRateLimit = true;
-            break;
-          }
-          console.error('TRACK SEARCH RETRY ERROR', track, retryError);
-        }
-      } else {
-        console.error('TRACK SEARCH ERROR', track, e);
+        stoppedByRateLimit = true;
+        break;
       }
+      console.error('ARTIST RESOLUTION ERROR', artistName, e);
     }
 
-    await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 250));
   }
 
-  return { uris: [...new Set(uris)], stoppedByRateLimit };
+  return {
+    uris: [...new Set(shuffle(collected))],
+    stoppedByRateLimit
+  };
 }
 
 async function createSpotifyPlaylist() {
@@ -840,8 +851,8 @@ async function createSpotifyPlaylist() {
     return;
   }
 
-  if (!tracks.length) {
-    toast('Aucun morceau à envoyer', 'error');
+  if (!artistSeeds.length) {
+    toast('Aucun artiste à envoyer', 'error');
     return;
   }
 
@@ -855,16 +866,16 @@ async function createSpotifyPlaylist() {
   }
 
   const title = document.getElementById('playlist-title').value.trim() || 'Ma playlist';
-  setLoading(true, 'Recherche des morceaux…');
+  setLoading(true, 'Récupération des morceaux Spotify…');
 
   try {
-    const { uris, stoppedByRateLimit } = await resolveUrisBeforeCreate();
+    const { uris, stoppedByRateLimit } = await resolveTopTracksFromArtists();
 
     if (uris.length === 0) {
       if (stoppedByRateLimit) {
-        throw new Error('Spotify limite les requêtes avant même qu’un morceau ait pu être résolu.');
+        throw new Error('Spotify limite les requêtes avant même qu’un artiste ait pu être exploité.');
       }
-      throw new Error('Aucun morceau trouvé sur Spotify');
+      throw new Error('Aucun morceau exploitable trouvé sur Spotify');
     }
 
     setLoading(true, 'Création de la playlist…');
@@ -905,7 +916,7 @@ async function createSpotifyPlaylist() {
       }
     }
 
-    let msg = `Playlist créée ! ${uris.length}/${tracks.length} titres ajoutés.`;
+    let msg = `Playlist créée ! ${uris.length} titres ajoutés à partir de ${artistSeeds.length} artistes.`;
     if (stoppedByRateLimit) {
       msg += ' Spotify a limité les requêtes avant la fin.';
     }
