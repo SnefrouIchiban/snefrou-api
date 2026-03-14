@@ -1,5 +1,8 @@
 // api/generate.js
 
+const MUSICBRAINZ_BASE = 'https://musicbrainz.org/ws/2';
+const USER_AGENT = 'Snefrou/1.0 ( playlist validation ; contact: hello@example.com )';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -33,113 +36,77 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY' });
     }
 
-    const artistCount = Math.max(4, Math.min(10, Math.ceil(count / 3)));
+    const collected = [];
+    const seenPairs = new Set();
+    const seenTitles = new Set();
 
-    const systemPrompt = [
-      'Tu es un expert musical spécialisé dans la préparation de playlists réellement exploitables sur Spotify.',
-      `Tu dois proposer exactement ${artistCount} artistes.`,
-      'Règles impératives :',
-      '- ne renvoie que des artistes réels et connus de Spotify',
-      '- n’invente jamais un artiste',
-      '- ne renvoie jamais de morceaux',
-      '- ne renvoie jamais d’albums',
-      '- ne renvoie jamais de labels ou de genres seuls à la place d’un artiste',
-      '- privilégie des artistes cohérents avec la demande de l’utilisateur',
-      '- préfère des artistes suffisamment connus pour avoir des top tracks disponibles sur Spotify',
-      '- mélange fidélité à la demande et accessibilité Spotify',
-      'Réponds UNIQUEMENT avec un objet JSON valide.',
-      'Pas de markdown. Pas de backticks. Pas de phrase avant ou après.',
-      'Format obligatoire :',
-      '{"playlist_title":"...","artists":["...","...","..."]}'
-    ].join('\n');
+    let pass = 0;
+    const maxPasses = 4;
 
-    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1800,
-        temperature: 0.3,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      })
-    });
+    while (collected.length < count && pass < maxPasses) {
+      pass += 1;
 
-    const rawResponseText = await anthropicResponse.text();
-    console.log('ANTHROPIC STATUS =', anthropicResponse.status);
+      const missing = count - collected.length;
+      const candidateTarget = Math.max(missing * 4, 20);
 
-    let data;
-    try {
-      data = JSON.parse(rawResponseText);
-    } catch {
+      const exclusionList = collected
+        .map(track => `${track.title} — ${track.artist}`)
+        .join(' | ');
+
+      const candidates = await generateCandidates({
+        prompt,
+        requestedCount: count,
+        candidateTarget,
+        exclusionList,
+        pass
+      });
+
+      for (const candidate of candidates) {
+        if (collected.length >= count) break;
+
+        const pairKey = normalize(candidate.title) + '__' + normalize(candidate.artist);
+        const titleKey = normalize(candidate.title);
+
+        if (seenPairs.has(pairKey)) continue;
+        seenPairs.add(pairKey);
+
+        const validated = await validateTrackWithMusicBrainz(candidate.title, candidate.artist);
+
+        await sleep(220);
+
+        if (!validated) continue;
+
+        const dedupeTitleArtist = normalize(validated.title) + '__' + normalize(validated.artist);
+        if (collected.some(t => normalize(t.title) + '__' + normalize(t.artist) === dedupeTitleArtist)) {
+          continue;
+        }
+
+        if (seenTitles.has(titleKey) && !sameLooseArtistFamily(collected, validated)) {
+          continue;
+        }
+
+        seenTitles.add(titleKey);
+        collected.push(validated);
+      }
+    }
+
+    if (collected.length === 0) {
       return res.status(502).json({
-        error: 'Anthropic returned non-JSON response',
-        raw: rawResponseText
+        error: 'No validated tracks could be produced'
       });
     }
 
-    if (!anthropicResponse.ok) {
-      return res.status(anthropicResponse.status).json({
-        error: 'Anthropic request failed',
-        details: data
-      });
-    }
-
-    const textBlock = data.content?.find(block => block.type === 'text');
-    const text = textBlock?.text?.trim();
-
-    if (!text) {
-      return res.status(502).json({
-        error: 'Anthropic returned no text content',
-        details: data
-      });
-    }
-
-    let parsed;
-    try {
-      const cleaned = text.replace(/```json|```/gi, '').trim();
-      parsed = JSON.parse(cleaned);
-    } catch {
-      return res.status(502).json({
-        error: 'Invalid JSON returned by Anthropic',
-        raw: text
-      });
-    }
-
-    const playlistTitle =
-      typeof parsed?.playlist_title === 'string' && parsed.playlist_title.trim()
-        ? parsed.playlist_title.trim()
-        : 'Ma playlist';
-
-    const rawArtists = Array.isArray(parsed?.artists) ? parsed.artists : [];
-
-    const cleanedArtists = [...new Set(
-      rawArtists
-        .map(artist => typeof artist === 'string' ? artist.trim() : '')
-        .filter(Boolean)
-        .filter(artist => !looksInvalidArtist(artist))
-    )].slice(0, artistCount);
-
-    if (cleanedArtists.length === 0) {
-      return res.status(502).json({
-        error: 'No valid artists returned by Anthropic',
-        raw: parsed
+    if (collected.length < count) {
+      return res.status(200).json({
+        playlist_title: buildFallbackTitle(prompt),
+        tracks: collected,
+        warning: `Only ${collected.length} validated tracks found out of ${count} requested.`
       });
     }
 
     return res.status(200).json({
-      playlist_title: playlistTitle,
-      artists: cleanedArtists,
-      requested_track_count: count
+      playlist_title: buildFallbackTitle(prompt),
+      tracks: collected.slice(0, count)
     });
   } catch (e) {
     console.error('API /generate ERROR =', e);
@@ -149,22 +116,214 @@ export default async function handler(req, res) {
   }
 }
 
-function looksInvalidArtist(value) {
-  const v = String(value || '').toLowerCase().trim();
+async function generateCandidates({ prompt, requestedCount, candidateTarget, exclusionList, pass }) {
+  const systemPrompt = [
+    'Tu es un expert musical extrêmement prudent.',
+    `L’utilisateur veut une playlist finale de ${requestedCount} morceaux validés.`,
+    `Tu dois proposer exactement ${candidateTarget} couples titre/artiste candidats.`,
+    'Règles impératives :',
+    '- ne renvoie que des morceaux réellement célèbres ou clairement catalogués',
+    '- n’invente jamais de titre',
+    '- n’invente jamais d’artiste',
+    '- ne renvoie jamais d’albums',
+    '- évite les live, remaster, deluxe, bonus track, alternate take, version obscure, edit',
+    '- évite les deep cuts, raretés, faces B peu connues',
+    '- privilégie les titres canoniques, simples, massivement reconnaissables',
+    '- si tu as un doute sur l’existence précise du morceau, tu dois l’exclure',
+    '- ne renvoie pas deux fois le même morceau',
+    '- ne renvoie pas les exclusions suivantes si elles existent : ' + (exclusionList || 'aucune'),
+    'Réponds UNIQUEMENT avec un objet JSON valide.',
+    'Format obligatoire :',
+    '{"playlist_title":"...","tracks":[{"title":"...","artist":"..."}]}'
+  ].join('\n');
 
-  if (!v) return true;
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 3000,
+      temperature: 0.2,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content:
+            `Passe ${pass}. Demande utilisateur : ${prompt}\n` +
+            `Je veux ${candidateTarget} candidats ultra sûrs.`
+        }
+      ]
+    })
+  });
 
-  const banned = [
+  const raw = await response.text();
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error('Anthropic returned non-JSON response');
+  }
+
+  if (!response.ok) {
+    throw new Error(`Anthropic request failed: ${raw}`);
+  }
+
+  const textBlock = data.content?.find(block => block.type === 'text');
+  const text = textBlock?.text?.trim();
+
+  if (!text) {
+    throw new Error('Anthropic returned no text content');
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text.replace(/```json|```/gi, '').trim());
+  } catch {
+    throw new Error('Invalid JSON returned by Anthropic');
+  }
+
+  const rawTracks = Array.isArray(parsed?.tracks) ? parsed.tracks : [];
+
+  return rawTracks
+    .map(track => ({
+      title: typeof track?.title === 'string' ? track.title.trim() : '',
+      artist: typeof track?.artist === 'string' ? track.artist.trim() : ''
+    }))
+    .filter(track => track.title && track.artist)
+    .filter(track => !looksLikeAlbum(track.title))
+    .filter(track => !looksLikeVersionNoise(track.title));
+}
+
+async function validateTrackWithMusicBrainz(title, artist) {
+  const query = `recording:"${escapeLucene(title)}" AND artist:"${escapeLucene(artist)}"`;
+  const url = `${MUSICBRAINZ_BASE}/recording?query=${encodeURIComponent(query)}&limit=5&fmt=json`;
+
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': USER_AGENT,
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json();
+  const recordings = Array.isArray(data?.recordings) ? data.recordings : [];
+
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const rec of recordings) {
+    const recTitle = typeof rec?.title === 'string' ? rec.title.trim() : '';
+    const artistCredit = Array.isArray(rec?.['artist-credit']) ? rec['artist-credit'] : [];
+    const recArtist = artistCredit
+      .map(part => typeof part?.name === 'string' ? part.name.trim() : '')
+      .filter(Boolean)
+      .join(' & ');
+
+    if (!recTitle || !recArtist) continue;
+
+    if (looksLikeVersionNoise(recTitle)) continue;
+
+    const score = scoreCandidate(title, artist, recTitle, recArtist);
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        title: recTitle,
+        artist: recArtist
+      };
+    }
+  }
+
+  if (!best || bestScore < 160) {
+    return null;
+  }
+
+  return best;
+}
+
+function scoreCandidate(inputTitle, inputArtist, foundTitle, foundArtist) {
+  let score = 0;
+
+  const t1 = normalize(inputTitle);
+  const a1 = normalize(inputArtist);
+  const t2 = normalize(foundTitle);
+  const a2 = normalize(foundArtist);
+
+  if (t1 === t2) score += 120;
+  else if (t2.includes(t1) || t1.includes(t2)) score += 70;
+
+  if (a1 === a2) score += 120;
+  else if (a2.includes(a1) || a1.includes(a2)) score += 70;
+
+  if (looksLikeVersionNoise(foundTitle)) score -= 80;
+
+  return score;
+}
+
+function sameLooseArtistFamily(collected, validated) {
+  const targetArtist = normalize(validated.artist);
+  return collected.some(track => normalize(track.artist) === targetArtist);
+}
+
+function normalize(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function escapeLucene(str) {
+  return String(str || '').replace(/([+\-!(){}\[\]^"~*?:\\/]|&&|\|\|)/g, '\\$1');
+}
+
+function looksLikeAlbum(title) {
+  const t = String(title || '').toLowerCase();
+  const badPatterns = [
     'greatest hits',
     'best of',
-    'various artists',
-    'playlist',
-    'soundtrack',
-    'compilation',
+    'collection',
     'anthology',
     'complete recordings',
     'deluxe edition'
   ];
+  return badPatterns.some(pattern => t.includes(pattern));
+}
 
-  return banned.some(pattern => v.includes(pattern));
+function looksLikeVersionNoise(title) {
+  const t = normalize(title);
+  const badPatterns = [
+    'live',
+    'remaster',
+    'remastered',
+    'deluxe',
+    'bonus track',
+    'alternate take',
+    'edit',
+    'radio edit',
+    'extended mix',
+    'version'
+  ];
+  return badPatterns.some(pattern => t.includes(pattern));
+}
+
+function buildFallbackTitle(prompt) {
+  const clean = String(prompt || '').trim();
+  if (!clean) return 'Ma playlist';
+  return clean.length > 80 ? clean.slice(0, 80).trim() : clean;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
