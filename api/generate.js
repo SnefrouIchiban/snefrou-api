@@ -40,26 +40,25 @@ export default async function handler(req, res) {
 
     const validatedPool = [];
     const seenKeys = new Set();
-    const usedPrompts = [];
 
-    const targetValidatedPoolSize = Math.max(count * 2, 24);
+    // Version allégée pour Vercel
+    const targetValidatedPoolSize = Math.max(count + 8, 18);
 
     for (let pass = 1; pass <= 2; pass += 1) {
       if (validatedPool.length >= targetValidatedPoolSize) break;
 
       const remainingPool = targetValidatedPoolSize - validatedPool.length;
       const candidateTarget = pass === 1
-        ? Math.max(remainingPool * 3, 30)
-        : Math.max(remainingPool * 2, 20);
+        ? Math.max(remainingPool * 2, 18)
+        : Math.max(remainingPool, 10);
 
-      const candidates = await generateCandidateTracks({
+      const candidates = await generateCandidateTracksWithRetry({
         prompt,
         requestedCount: count,
         candidateTarget,
         pass,
         alreadyValidated: validatedPool,
-        alreadyRejectedOrSeen: [...seenKeys],
-        usedPrompts
+        alreadyRejectedOrSeen: [...seenKeys]
       });
 
       for (const candidate of candidates) {
@@ -71,7 +70,8 @@ export default async function handler(req, res) {
 
         const validation = await validateTrackAgainstMusicBrainz(candidate.title, candidate.artist);
 
-        await sleep(450);
+        // pause légère seulement
+        await sleep(120);
 
         if (!validation.ok) continue;
 
@@ -131,21 +131,36 @@ export default async function handler(req, res) {
   }
 }
 
+async function generateCandidateTracksWithRetry(args, maxAttempts = 2) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await generateCandidateTracks(args);
+    } catch (e) {
+      lastError = e;
+      console.error(`generateCandidateTracks attempt ${attempt} failed:`, e.message);
+      await sleep(250);
+    }
+  }
+
+  throw lastError;
+}
+
 async function generateCandidateTracks({
   prompt,
   requestedCount,
   candidateTarget,
   pass,
   alreadyValidated,
-  alreadyRejectedOrSeen,
-  usedPrompts
+  alreadyRejectedOrSeen
 }) {
   const validatedLines = alreadyValidated
     .map(track => `${track.title} — ${track.artist}`)
-    .slice(0, 40);
+    .slice(0, 30);
 
   const seenLines = alreadyRejectedOrSeen
-    .slice(0, 80)
+    .slice(0, 50)
     .map(key => key.replace('__', ' — '));
 
   const systemPrompt = [
@@ -170,7 +185,6 @@ async function generateCandidateTracks({
     '- n’utilise un immense tube que s’il est vraiment indispensable à la logique du prompt',
     '- si le prompt s’y prête, va chercher des artistes secondaires, des scènes locales, des titres moins canonisés',
     '- cherche la diversité, mais sans sacrifier la fidélité au prompt',
-    '- vise implicitement un équilibre entre morceaux immédiatement convaincants mais peu évidents, deep cuts d’artistes connus, et artistes moins exposés mais très pertinents',
     '- si tu as un doute sérieux sur l’existence exacte d’un morceau, exclue-le',
     '',
     'Important :',
@@ -184,6 +198,7 @@ async function generateCandidateTracks({
     seenLines.length ? seenLines.join(' | ') : 'aucun',
     '',
     'Réponds UNIQUEMENT avec un objet JSON valide.',
+    'Ta réponse doit commencer par { et finir par } sans aucun texte avant ou après.',
     'Pas de markdown. Pas de backticks.',
     'Format obligatoire :',
     '{"playlist_title":"...","tracks":[{"title":"...","artist":"...","duration":"3:45"}]}'
@@ -205,11 +220,9 @@ async function generateCandidateTracks({
         'Évite de me redonner des morceaux déjà vus.'
       ].join('\n');
 
-  usedPrompts.push(userPrompt);
-
   const data = await callAnthropicJson({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 3200,
+    max_tokens: 2600,
     temperature: 0.68,
     system: systemPrompt,
     messages: [
@@ -230,8 +243,9 @@ async function generateCandidateTracks({
 
   let parsed;
   try {
-    parsed = JSON.parse(stripCodeFences(text));
+    parsed = safeParseAnthropicJson(text);
   } catch {
+    console.error('CANDIDATE RAW TEXT =', text);
     throw new Error('Invalid JSON returned by Anthropic during candidate generation');
   }
 
@@ -250,7 +264,7 @@ async function generateCandidateTracks({
 }
 
 async function rankValidatedTracks({ prompt, validatedTracks, count }) {
-  const limitedPool = validatedTracks.slice(0, 60);
+  const limitedPool = validatedTracks.slice(0, 40);
 
   const systemPrompt = [
     'Tu es un programmateur musical de très haut niveau.',
@@ -274,6 +288,7 @@ async function rankValidatedTracks({ prompt, validatedTracks, count }) {
     `Tu dois choisir exactement ${Math.min(count, limitedPool.length)} morceaux.`,
     '',
     'Réponds UNIQUEMENT avec un objet JSON valide.',
+    'Ta réponse doit commencer par { et finir par } sans aucun texte avant ou après.',
     'Pas de markdown. Pas de backticks.',
     'Format obligatoire :',
     '{"tracks":[{"title":"...","artist":"..."}]}'
@@ -287,7 +302,7 @@ async function rankValidatedTracks({ prompt, validatedTracks, count }) {
 
   const data = await callAnthropicJson({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1800,
+    max_tokens: 1400,
     temperature: 0.55,
     system: systemPrompt,
     messages: [
@@ -308,8 +323,9 @@ async function rankValidatedTracks({ prompt, validatedTracks, count }) {
 
   let parsed;
   try {
-    parsed = JSON.parse(stripCodeFences(text));
+    parsed = safeParseAnthropicJson(text);
   } catch {
+    console.error('RANKING RAW TEXT =', text);
     throw new Error('Invalid JSON returned by Anthropic during ranking');
   }
 
@@ -372,8 +388,8 @@ async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
   const exactQuery = `recording:"${escapeLucene(inputTitle)}" AND artist:"${escapeLucene(inputArtist)}"`;
   const looseQuery = `"${escapeLucene(inputTitle)}" AND "${escapeLucene(inputArtist)}"`;
 
-  const exactResults = await searchMusicBrainzRecordings(exactQuery, 5);
-  const looseResults = exactResults.length ? [] : await searchMusicBrainzRecordings(looseQuery, 8);
+  const exactResults = await searchMusicBrainzRecordings(exactQuery, 4);
+  const looseResults = exactResults.length ? [] : await searchMusicBrainzRecordings(looseQuery, 6);
 
   const candidates = [...exactResults, ...looseResults];
 
@@ -407,7 +423,6 @@ async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
   if (best.score >= 180) {
     return {
       ok: true,
-      tier: 'strict',
       title: best.title,
       artist: best.artist
     };
@@ -416,7 +431,6 @@ async function validateTrackAgainstMusicBrainz(inputTitle, inputArtist) {
   if (best.score >= 145) {
     return {
       ok: true,
-      tier: 'soft',
       title: best.title,
       artist: best.artist
     };
@@ -485,6 +499,26 @@ async function callAnthropicJson({
   }
 
   return data;
+}
+
+function safeParseAnthropicJson(text) {
+  const cleaned = stripCodeFences(text);
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const possibleJson = cleaned.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(possibleJson);
+    } catch {}
+  }
+
+  throw new Error('Could not parse JSON from Anthropic response');
 }
 
 function extractArtistCredit(recording) {
